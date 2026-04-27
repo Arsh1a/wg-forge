@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.2.3"
+VERSION="0.3.0"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -196,8 +196,133 @@ EOF
     echo "✓ Server public key:  $SERVER_PUB"
     echo "✓ Endpoint:           $VPS_IP:$WG_PORT"
     echo "✓ VPN subnet:         ${SUBNET}.0/24"
+
+    # Web UI setup
     echo ""
+    read -rp "Set up web dashboard? [y/N]: " WANT_WEB
+    if [[ "$WANT_WEB" =~ ^[Yy]$ ]]; then
+        cmd_setup_web
+    else
+        echo ""
+        echo "  Run 'wg-forge add <name>' to create your first client."
+    fi
+}
+
+cmd_setup_web() {
+    echo ""
+    echo "── Web Dashboard Setup ─────────────────"
+
+    read -rp "Web UI port                 [8080]: " WEB_PORT; WEB_PORT=${WEB_PORT:-8080}
+    read -rp "Admin username              [admin]: " WEB_USER; WEB_USER=${WEB_USER:-admin}
+    read -rsp "Admin password: " WEB_PASS; echo
+    read -rsp "Confirm password: " WEB_PASS2; echo
+    [ "$WEB_PASS" != "$WEB_PASS2" ] && echo "✗ Passwords do not match" && exit 1
+    [ -z "$WEB_PASS" ] && echo "✗ Password cannot be empty" && exit 1
+
+    read -rp "Use domain + HTTPS (nginx)? [y/N]: " WANT_HTTPS
+    local WEB_DOMAIN=""
+    if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
+        read -rp "Domain name (e.g. vpn.example.com): " WEB_DOMAIN
+        [ -z "$WEB_DOMAIN" ] && echo "✗ Domain is required for HTTPS" && exit 1
+    fi
+
+    # Generate secret path slug (20+ random chars)
+    local SECRET_SLUG
+    SECRET_SLUG=$(openssl rand -base64 18 | tr -dc 'a-z0-9' | head -c 22)
+
+    # Hash password: salt:sha256(salt+pass)
+    local WEB_SALT WEB_HASH
+    WEB_SALT=$(openssl rand -hex 16)
+    WEB_HASH=$(echo -n "${WEB_SALT}${WEB_PASS}" | sha256sum | awk '{print $1}')
+
+    # Determine origin for CSRF
+    local ORIGIN
+    if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
+        ORIGIN="https://$WEB_DOMAIN"
+    else
+        local PUBLIC_IP
+        PUBLIC_IP=$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null || echo "localhost")
+        ORIGIN="http://${PUBLIC_IP}:${WEB_PORT}"
+    fi
+
+    cat > /etc/wg-forge/web.conf <<EOF
+WEB_PORT="$WEB_PORT"
+WEB_USER="$WEB_USER"
+WEB_PASS_HASH="${WEB_SALT}:${WEB_HASH}"
+WEB_DOMAIN="$WEB_DOMAIN"
+PORT="$WEB_PORT"
+ORIGIN="$ORIGIN"
+SECRET_PATH="$SECRET_SLUG"
+EOF
+    chmod 600 /etc/wg-forge/web.conf
+
+    # Install Node.js if missing
+    if ! command -v node >/dev/null 2>&1; then
+        echo "Installing Node.js..."
+        NODE_VERSION="20.14.0"
+        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+            | tar -xz -C /usr/local --strip-components=1
+        echo "✓ Node.js $(node -v) installed"
+    fi
+
+    # Build web app from source downloaded by installer
+    if [ ! -d /opt/wg-forge-web ]; then
+        echo "✗ Web source not found at /opt/wg-forge-web — re-run the installer"
+        exit 1
+    fi
+
+    echo "Building web dashboard..."
+    cd /opt/wg-forge-web && npm install --silent && npm run build || {
+        echo "✗ Failed to build web dashboard"
+        exit 1
+    }
+    echo "✓ Web dashboard built"
+
+    # Enable web service
+    systemctl daemon-reload
+    systemctl enable --now wg-forge-web
+    echo "✓ Web dashboard started on port $WEB_PORT"
+
+    # Setup nginx + SSL if requested
+    if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
+        cmd_setup_nginx "$WEB_DOMAIN" "$WEB_PORT"
+    fi
+
+    cmd_web
     echo "  Run 'wg-forge add <name>' to create your first client."
+}
+
+cmd_setup_nginx() {
+    local DOMAIN=$1 PORT=$2
+
+    if ! command -v nginx >/dev/null 2>&1; then
+        echo "Installing nginx..."
+        install_wg_deps nginx
+    fi
+    if ! command -v certbot >/dev/null 2>&1; then
+        echo "Installing certbot..."
+        install_wg_deps certbot python3-certbot-nginx
+    fi
+
+    cat > "/etc/nginx/sites-available/wg-forge" <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+}
+EOF
+
+    ln -sf /etc/nginx/sites-available/wg-forge /etc/nginx/sites-enabled/wg-forge
+    nginx -t && systemctl reload nginx
+
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" --redirect
+    echo "✓ HTTPS configured for $DOMAIN"
 }
 
 cmd_add() {
@@ -585,6 +710,36 @@ cmd_update() {
     curl -fsSL "https://raw.githubusercontent.com/Arsh1a/wg-forge/$REF/install.sh" | bash -s -- "$REF"
 }
 
+cmd_web() {
+    local conf="/etc/wg-forge/web.conf"
+    [ ! -f "$conf" ] && echo "✗ Web dashboard is not configured. Run 'wg-forge setup'." && exit 1
+
+    # shellcheck source=/dev/null
+    source "$conf"
+
+    local BASE_URL
+    if [ -n "$WEB_DOMAIN" ]; then
+        BASE_URL="https://$WEB_DOMAIN"
+    else
+        local PUBLIC_IP
+        PUBLIC_IP=$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null || echo "localhost")
+        BASE_URL="http://${PUBLIC_IP}:${WEB_PORT}"
+    fi
+
+    echo ""
+    echo "── Web Dashboard ───────────────────────────"
+    echo "  User:    $WEB_USER"
+    echo "  Port:    $WEB_PORT"
+    if [ -n "$SECRET_PATH" ]; then
+        echo "  URL:     ${BASE_URL}/${SECRET_PATH}"
+    else
+        echo "  URL:     ${BASE_URL}"
+        echo "  Secret:  (none configured)"
+    fi
+    echo "  Status:  $(systemctl is-active wg-forge-web 2>/dev/null || echo 'unknown')"
+    echo ""
+}
+
 cmd_help() {
     cat <<EOF
 
@@ -613,6 +768,7 @@ cmd_help() {
   ── Other ───────────────────────────────────────
     version                        Show version
     update [version]               Update to latest (or a specific version e.g. v0.2.1)
+    web                            Show web dashboard URL, user, and status
 
 EOF
 }
@@ -634,6 +790,7 @@ case "$1" in
     total)       cmd_total                 ;;
     version|--version|-v) echo "wg-forge $VERSION" ;;
     update)      cmd_update      "$2"      ;;
+    web)         cmd_web                  ;;
     help|--help|-h|"") cmd_help           ;;
     *) echo "Unknown command: $1  (run 'wg-forge help')" && exit 1 ;;
 esac

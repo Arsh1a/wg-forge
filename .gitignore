@@ -5,3 +5,7 @@ limits.conf
 total_bandwidth.conf
 *.log
 .DS_Store
+
+web/.svelte-kit/
+web/node_modules/
+web/build/

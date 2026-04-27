@@ -61,13 +61,30 @@ if [ -d /etc/systemd/system ]; then
     install -m 644 /tmp/wg-forge-checklimits.timer   /etc/systemd/system/wg-forge-checklimits.timer
     rm -f /tmp/wg-forge-tracker.service /tmp/wg-forge-checklimits.service /tmp/wg-forge-checklimits.timer
     systemctl daemon-reload
+    # Install web service unit (not started yet — wg-forge setup does that)
+    curl -fsSL "$BASE_URL/wg-forge-web.service" -o /etc/systemd/system/wg-forge-web.service
     systemctl enable --now wg-forge-tracker
     systemctl enable --now wg-forge-checklimits.timer
     echo "✓ wg-forge-tracker service enabled and started"
-    echo "✓ wg-forge-checklimits timer enabled (runs every 5 minutes)"
+    echo "✓ wg-forge-checklimits timer enabled (runs every 30 seconds)"
 else
     echo "✗ systemd not found — start wg-forge checklimits manually via cron"
 fi
+
+# Download web source (built later if user wants web UI)
+echo "Downloading web dashboard source..."
+REPO_TMP=$(mktemp -d)
+curl -fsSL "https://api.github.com/repos/$REPO/tarball/$REF" -o "$REPO_TMP/repo.tar.gz"
+tar -xzf "$REPO_TMP/repo.tar.gz" -C "$REPO_TMP"
+EXTRACTED_DIR=$(find "$REPO_TMP" -mindepth 1 -maxdepth 1 -type d | head -1)
+if [ -n "$EXTRACTED_DIR" ] && [ -d "$EXTRACTED_DIR/web" ]; then
+    rm -rf /opt/wg-forge-web
+    mv "$EXTRACTED_DIR/web" /opt/wg-forge-web
+    echo "✓ Web source saved to /opt/wg-forge-web"
+else
+    echo "⚠ Web source not found in tarball — web UI will not be available"
+fi
+rm -rf "$REPO_TMP"
 
 echo "✓ wg-forge installed"
 echo ""
