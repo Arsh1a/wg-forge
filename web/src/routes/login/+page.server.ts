@@ -3,7 +3,7 @@ import { fail, redirect } from '@sveltejs/kit';
 import { verifyPassword, createSession } from '$lib/sessions.js';
 
 export const actions: Actions = {
-  default: async ({ request, cookies }) => {
+  default: async ({ request, cookies, url }) => {
     const data     = await request.formData();
     const username = data.get('username') as string;
     const password = data.get('password') as string;
@@ -17,6 +17,7 @@ export const actions: Actions = {
       path: '/',
       httpOnly: true,
       sameSite: 'strict',
+      secure: url.protocol === 'https:',
       maxAge: 60 * 60 * 24
     });
 
