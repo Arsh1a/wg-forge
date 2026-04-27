@@ -226,6 +226,10 @@ cmd_setup_web() {
         [ -z "$WEB_DOMAIN" ] && echo "✗ Domain is required for HTTPS" && exit 1
     fi
 
+    # Generate secret path slug (20+ random chars)
+    local SECRET_SLUG
+    SECRET_SLUG=$(openssl rand -base64 18 | tr -dc 'a-z0-9' | head -c 22)
+
     # Hash password: salt:sha256(salt+pass)
     local WEB_SALT WEB_HASH
     WEB_SALT=$(openssl rand -hex 16)
@@ -248,6 +252,7 @@ WEB_PASS_HASH="${WEB_SALT}:${WEB_HASH}"
 WEB_DOMAIN="$WEB_DOMAIN"
 PORT="$WEB_PORT"
 ORIGIN="$ORIGIN"
+SECRET_PATH="$SECRET_SLUG"
 EOF
     chmod 600 /etc/wg-forge/web.conf
 
@@ -285,10 +290,11 @@ EOF
 
     echo ""
     if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
-        echo "  Dashboard: https://$WEB_DOMAIN"
+        echo "  Dashboard: https://$WEB_DOMAIN/$SECRET_SLUG"
     else
-        echo "  Dashboard: http://$(curl -fsSL --max-time 3 https://api.ipify.org 2>/dev/null):$WEB_PORT"
+        echo "  Dashboard: http://$(curl -fsSL --max-time 3 https://api.ipify.org 2>/dev/null):$WEB_PORT/$SECRET_SLUG"
     fi
+    echo "  Save this URL — it won't be shown again."
     echo "  Run 'wg-forge add <name>' to create your first client."
 }
 

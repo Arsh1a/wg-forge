@@ -43,6 +43,32 @@ wg-forge checklimits           Enforce limits (run by cron)
 | `/etc/wireguard/total_bandwidth.conf` | Lifetime usage    |
 | `/etc/wireguard/keys/`                | Private keys      |
 
+## Uninstall
+
+```bash
+# Stop and remove services
+systemctl stop wg-forge-web wg-forge-checklimits.timer wg-forge-checklimits.service
+systemctl disable wg-forge-web wg-forge-checklimits.timer wg-forge-checklimits.service
+rm -f /etc/systemd/system/wg-forge-web.service
+rm -f /etc/systemd/system/wg-forge-checklimits.service
+rm -f /etc/systemd/system/wg-forge-checklimits.timer
+systemctl daemon-reload
+
+# Remove WireGuard interface
+wg-quick down wg0
+systemctl disable wg-quick@wg0
+
+# Remove files
+rm -f /usr/local/bin/wg-forge
+rm -rf /etc/wg-forge
+rm -rf /opt/wg-forge-web
+
+# Remove WireGuard config and client data (destructive — all peers lost)
+rm -rf /etc/wireguard
+```
+
+WireGuard itself (`wireguard-tools`, kernel module) is left installed — remove it with your package manager if you no longer need it (`apt remove wireguard-tools`, `dnf remove wireguard-tools`, etc.).
+
 ## License
 
 MIT
