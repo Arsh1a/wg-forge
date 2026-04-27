@@ -8,8 +8,8 @@
 
 <div class="min-h-screen bg-bg flex items-center justify-center px-4">
   <div class="w-full max-w-sm bg-surface border border-border rounded-xl p-10">
-    <h1 class="text-xl font-bold text-white mb-1 font-mono">wg-forge</h1>
-    <p class="text-sm text-gray-500 mb-8 font-mono">Admin Dashboard</p>
+    <h1 class="text-xl font-bold text-[#cc3333] mb-1 ">wg-forge</h1>
+    <p class="text-sm text-gray-500 mb-8 ">Admin Dashboard</p>
 
     <form method="POST" use:enhance class="space-y-4">
       {#if form?.error}

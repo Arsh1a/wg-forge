@@ -11,10 +11,10 @@
   const TABLE_HEADERS = ['Name', 'IP', 'Status', 'Session', 'Limit', 'Lifetime', 'Last seen', 'Actions'];
 </script>
 
-<div class="min-h-screen bg-bg text-white font-mono">
+<div class="min-h-screen bg-bg text-white ">
 
   <header class="bg-surface border-b border-border px-8 py-4 flex items-center justify-between">
-    <span class="text-indigo-400 font-bold text-lg">wg-forge</span>
+    <span class="font-bold text-lg">wg-forge</span>
     <div class="flex items-center gap-6">
       <span class="text-xs text-muted">{data.endpoint}</span>
       <form method="POST" action="/logout">
