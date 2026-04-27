@@ -28,9 +28,10 @@ wg-forge checklimits              Enforce limits (run by cron)
 
 ## Requirements
 
-- Linux with WireGuard (`wg`)
-- `perl`, `bc`
+- Linux (Debian/Ubuntu/Fedora/RHEL/Arch)
 - Root
+- `curl`, `perl`, `bc` — installed automatically if missing
+- WireGuard — installed automatically by `wg-forge setup` if missing
 
 ## Files
 

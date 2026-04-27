@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.1.1"
+VERSION="0.2.0"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -93,34 +93,93 @@ print_qr() {
 
 # Commands
 
+install_wg_deps() {
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq && apt-get install -y wireguard-tools perl bc curl
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y wireguard-tools perl bc curl
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y wireguard-tools perl bc curl
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm wireguard-tools perl bc curl
+    else
+        echo "✗ Unsupported package manager — install wireguard-tools, perl, bc, curl manually"
+        exit 1
+    fi
+}
+
 cmd_setup() {
     echo "╔══════════════════════════════╗"
     echo "║     wg-forge  Setup          ║"
     echo "╚══════════════════════════════╝"
     echo ""
 
-    mkdir -p /etc/wg-forge
+    [ "$EUID" -ne 0 ] && echo "✗ Run as root" && exit 1
 
-    read -rp "WireGuard interface         [wg0]:     " WG_IF;   WG_IF=${WG_IF:-wg0}
-    read -rp "VPS public IP:                         " VPS_IP
-    read -rp "WireGuard listen port       [51820]:   " WG_PORT; WG_PORT=${WG_PORT:-51820}
-    read -rp "WireGuard subnet (3 octets) [10.99.0]: " SUBNET;  SUBNET=${SUBNET:-10.99.0}
-
-    local PUBKEY
-    PUBKEY=$(wg show "$WG_IF" public-key 2>/dev/null)
-    if [ -n "$PUBKEY" ]; then
-        echo "Auto-detected public key: $PUBKEY"
-    else
-        read -rp "VPS WireGuard public key: " PUBKEY
+    # Install WireGuard if missing
+    if ! command -v wg >/dev/null 2>&1; then
+        echo "WireGuard not found — installing..."
+        install_wg_deps
+        echo ""
     fi
 
+    mkdir -p /etc/wg-forge /etc/wireguard/keys
+    chmod 700 /etc/wireguard/keys
+
+    # Collect settings
+    read -rp "WireGuard interface         [wg0]:     " WG_IF;   WG_IF=${WG_IF:-wg0}
+    read -rp "WireGuard listen port       [51820]:   " WG_PORT; WG_PORT=${WG_PORT:-51820}
+    read -rp "VPN subnet (3 octets)       [10.99.0]: " SUBNET;  SUBNET=${SUBNET:-10.99.0}
+
+    # Detect public IP
+    local DETECTED_IP
+    DETECTED_IP=$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null || true)
+    read -rp "Server public IP            [${DETECTED_IP:-?}]: " VPS_IP
+    VPS_IP=${VPS_IP:-$DETECTED_IP}
+    [ -z "$VPS_IP" ] && echo "✗ Public IP is required" && exit 1
+
+    # Detect default network interface for NAT
+    local PUB_IFACE
+    PUB_IFACE=$(ip route show default | awk '{print $5}' | head -1)
+    read -rp "Public network interface    [${PUB_IFACE:-eth0}]: " NET_IF
+    NET_IF=${NET_IF:-${PUB_IFACE:-eth0}}
+
+    # Generate server keypair
+    local SERVER_PRIV SERVER_PUB
+    SERVER_PRIV=$(wg genkey)
+    SERVER_PUB=$(echo "$SERVER_PRIV" | wg pubkey)
+    printf "%s" "$SERVER_PRIV" > /etc/wireguard/server.key
+    chmod 600 /etc/wireguard/server.key
+
+    # Write wg0.conf
+    local WG_CONF="/etc/wireguard/${WG_IF}.conf"
+    cat > "$WG_CONF" <<EOF
+[Interface]
+Address = ${SUBNET}.1/24
+ListenPort = $WG_PORT
+PrivateKey = $SERVER_PRIV
+PostUp   = iptables -A FORWARD -i $WG_IF -j ACCEPT; iptables -t nat -A POSTROUTING -o $NET_IF -j MASQUERADE
+PostDown = iptables -D FORWARD -i $WG_IF -j ACCEPT; iptables -t nat -D POSTROUTING -o $NET_IF -j MASQUERADE
+EOF
+    chmod 600 "$WG_CONF"
+
+    # Enable IP forwarding
+    if ! grep -q "^net.ipv4.ip_forward=1" /etc/sysctl.conf 2>/dev/null; then
+        echo "net.ipv4.ip_forward=1" >> /etc/sysctl.conf
+    fi
+    sysctl -qw net.ipv4.ip_forward=1
+
+    # Start WireGuard
+    systemctl enable --now "wg-quick@${WG_IF}"
+
+    # Save wg-forge config
     cat > "$CONFIG_FILE" <<EOF
 # wg-forge configuration
 WG_INTERFACE="$WG_IF"
-VPS_PUBKEY="$PUBKEY"
+VPS_PUBKEY="$SERVER_PUB"
 VPS_ENDPOINT="$VPS_IP:$WG_PORT"
 WG_SUBNET="$SUBNET"
-WG_CONF="/etc/wireguard/${WG_IF}.conf"
+WG_CONF="$WG_CONF"
 CLIENTS_FILE="/etc/wireguard/clients.conf"
 LIMITS_FILE="/etc/wireguard/limits.conf"
 TOTAL_FILE="/etc/wireguard/total_bandwidth.conf"
@@ -133,8 +192,12 @@ EOF
     done
 
     echo ""
-    echo "✓ Config saved → $CONFIG_FILE"
-    echo "  Run 'wg-forge help' to get started."
+    echo "✓ WireGuard interface $WG_IF is up"
+    echo "✓ Server public key:  $SERVER_PUB"
+    echo "✓ Endpoint:           $VPS_IP:$WG_PORT"
+    echo "✓ VPN subnet:         ${SUBNET}.0/24"
+    echo ""
+    echo "  Run 'wg-forge add <name>' to create your first client."
 }
 
 cmd_add() {
@@ -523,7 +586,7 @@ cmd_help() {
   Usage: wg-forge <command> [args]
 
   ── Setup ───────────────────────────────────────
-    setup                          First-run interactive setup
+    setup                          Install WireGuard, configure server, bring up interface
 
   ── Clients ─────────────────────────────────────
     add      <n> [limit]        Create client  (e.g. add john 10GB)

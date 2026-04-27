@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-04-27
+
+### Changed
+
+- `wg-forge setup` now fully initializes the WireGuard server from scratch:
+  - Installs WireGuard if not present (apt/dnf/yum/pacman)
+  - Auto-detects server public IP and default network interface
+  - Generates server keypair and writes `/etc/wireguard/wg0.conf`
+  - Enables IP forwarding via sysctl
+  - Configures iptables NAT (PostUp/PostDown) so clients can route traffic through the server
+  - Starts and enables `wg-quick@wg0` via systemd
+- Users no longer need WireGuard setuped — `setup` handles everything
+
 ## [0.1.1] - 2026-04-27
 
 ### Fixed
