@@ -44,15 +44,6 @@ if [ ${#MISSING[@]} -gt 0 ]; then
     echo ""
 fi
 
-install_node() {
-    if command -v node >/dev/null 2>&1; then return; fi
-    echo "Installing Node.js..."
-    NODE_VERSION="20.14.0"
-    curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
-        | tar -xz -C /usr/local --strip-components=1
-    echo "✓ Node.js $(node -v) installed"
-}
-
 echo "Downloading wg-forge..."
 curl -fsSL "$BASE_URL/wg-forge"                         -o /usr/local/bin/wg-forge
 curl -fsSL "$BASE_URL/wg-forge-tracker"                 -o /usr/local/bin/wg-forge-tracker
@@ -79,18 +70,6 @@ if [ -d /etc/systemd/system ]; then
 else
     echo "✗ systemd not found — start wg-forge checklimits manually via cron"
 fi
-
-# Install Node.js and build web app
-install_node
-echo "Building web dashboard..."
-REPO_TMP=$(mktemp -d)
-curl -fsSL "https://api.github.com/repos/$REPO/tarball/$REF" -o "$REPO_TMP/repo.tar.gz"
-tar -xzf "$REPO_TMP/repo.tar.gz" -C "$REPO_TMP"
-rm -rf /opt/wg-forge-web
-mv "$REPO_TMP"/*/web /opt/wg-forge-web
-rm -rf "$REPO_TMP"
-cd /opt/wg-forge-web && npm install --silent && npm run build
-echo "✓ Web dashboard built"
 
 echo "✓ wg-forge installed"
 echo ""

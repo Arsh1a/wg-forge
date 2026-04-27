@@ -231,22 +231,51 @@ cmd_setup_web() {
     WEB_SALT=$(openssl rand -hex 16)
     WEB_HASH=$(echo -n "${WEB_SALT}${WEB_PASS}" | sha256sum | awk '{print $1}')
 
+    # Determine origin for CSRF
+    local ORIGIN
+    if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
+        ORIGIN="https://$WEB_DOMAIN"
+    else
+        local PUBLIC_IP
+        PUBLIC_IP=$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null || echo "localhost")
+        ORIGIN="http://${PUBLIC_IP}:${WEB_PORT}"
+    fi
+
     cat > /etc/wg-forge/web.conf <<EOF
 WEB_PORT="$WEB_PORT"
 WEB_USER="$WEB_USER"
 WEB_PASS_HASH="${WEB_SALT}:${WEB_HASH}"
 WEB_DOMAIN="$WEB_DOMAIN"
 PORT="$WEB_PORT"
+ORIGIN="$ORIGIN"
 EOF
     chmod 600 /etc/wg-forge/web.conf
 
-    # Build web app
-    if [ ! -d /opt/wg-forge-web ]; then
-        echo "✗ Web app not found at /opt/wg-forge-web — run the installer first"
-        exit 1
+    # Install Node.js if missing
+    if ! command -v node >/dev/null 2>&1; then
+        echo "Installing Node.js..."
+        NODE_VERSION="20.14.0"
+        curl -fsSL "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+            | tar -xz -C /usr/local --strip-components=1
+        echo "✓ Node.js $(node -v) installed"
     fi
 
+    # Download and build web app
+    echo "Building web dashboard..."
+    local REPO="Arsh1a/wg-forge"
+    local REF="main"
+    local REPO_TMP
+    REPO_TMP=$(mktemp -d)
+    curl -fsSL "https://api.github.com/repos/$REPO/tarball/$REF" -o "$REPO_TMP/repo.tar.gz"
+    tar -xzf "$REPO_TMP/repo.tar.gz" -C "$REPO_TMP"
+    rm -rf /opt/wg-forge-web
+    mv "$REPO_TMP"/*/web /opt/wg-forge-web
+    rm -rf "$REPO_TMP"
+    cd /opt/wg-forge-web && npm install --silent && npm run build
+    echo "✓ Web dashboard built"
+
     # Enable web service
+    systemctl daemon-reload
     systemctl enable --now wg-forge-web
     echo "✓ Web dashboard started on port $WEB_PORT"
 
