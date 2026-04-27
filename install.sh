@@ -71,6 +71,21 @@ else
     echo "✗ systemd not found — start wg-forge checklimits manually via cron"
 fi
 
+# Download web source (built later if user wants web UI)
+echo "Downloading web dashboard source..."
+REPO_TMP=$(mktemp -d)
+curl -fsSL "https://api.github.com/repos/$REPO/tarball/$REF" -o "$REPO_TMP/repo.tar.gz"
+tar -xzf "$REPO_TMP/repo.tar.gz" -C "$REPO_TMP"
+EXTRACTED_DIR=$(find "$REPO_TMP" -mindepth 1 -maxdepth 1 -type d | head -1)
+if [ -n "$EXTRACTED_DIR" ] && [ -d "$EXTRACTED_DIR/web" ]; then
+    rm -rf /opt/wg-forge-web
+    mv "$EXTRACTED_DIR/web" /opt/wg-forge-web
+    echo "✓ Web source saved to /opt/wg-forge-web"
+else
+    echo "⚠ Web source not found in tarball — web UI will not be available"
+fi
+rm -rf "$REPO_TMP"
+
 echo "✓ wg-forge installed"
 echo ""
 echo "Next: sudo wg-forge setup"

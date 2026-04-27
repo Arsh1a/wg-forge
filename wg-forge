@@ -260,23 +260,13 @@ EOF
         echo "✓ Node.js $(node -v) installed"
     fi
 
-    # Download and build web app
-    echo "Building web dashboard..."
-    local REPO="Arsh1a/wg-forge"
-    local REF="main"
-    local REPO_TMP EXTRACTED_DIR
-    REPO_TMP=$(mktemp -d)
-    curl -fsSL "https://api.github.com/repos/$REPO/tarball/$REF" -o "$REPO_TMP/repo.tar.gz"
-    tar -xzf "$REPO_TMP/repo.tar.gz" -C "$REPO_TMP"
-    EXTRACTED_DIR=$(find "$REPO_TMP" -mindepth 1 -maxdepth 1 -type d | head -1)
-    if [ -z "$EXTRACTED_DIR" ] || [ ! -d "$EXTRACTED_DIR/web" ]; then
-        echo "✗ Failed to extract web app from tarball"
-        rm -rf "$REPO_TMP"
+    # Build web app from source downloaded by installer
+    if [ ! -d /opt/wg-forge-web ]; then
+        echo "✗ Web source not found at /opt/wg-forge-web — re-run the installer"
         exit 1
     fi
-    rm -rf /opt/wg-forge-web
-    mv "$EXTRACTED_DIR/web" /opt/wg-forge-web
-    rm -rf "$REPO_TMP"
+
+    echo "Building web dashboard..."
     cd /opt/wg-forge-web && npm install --silent && npm run build || {
         echo "✗ Failed to build web dashboard"
         exit 1
