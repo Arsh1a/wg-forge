@@ -1,0 +1,42 @@
+#!/bin/bash
+# wg-forge-tracker - persistent bandwidth counter for WireGuard interface
+
+CONFIG_FILE="/etc/wg-forge/config.conf"
+[ -f "$CONFIG_FILE" ] && source "$CONFIG_FILE"
+
+IFACE="${WG_INTERFACE:-wg0}"
+DAT="${BANDWIDTH_FILE:-/etc/wg-forge/bandwidth.dat}"
+INTERVAL=10
+
+mkdir -p /etc/wg-forge
+
+if [ ! -f "$DAT" ]; then
+    cat > "$DAT" <<EOF
+total_rx:0
+total_tx:0
+last_rx:0
+last_tx:0
+EOF
+fi
+
+get() { grep "^$1:" "$DAT" | cut -d: -f2; }
+put() { sed -i "s/^$1:.*/$1:$2/" "$DAT"; }
+
+while true; do
+    if [ -f "/sys/class/net/$IFACE/statistics/rx_bytes" ]; then
+        CRX=$(cat "/sys/class/net/$IFACE/statistics/rx_bytes")
+        CTX=$(cat "/sys/class/net/$IFACE/statistics/tx_bytes")
+        LRX=$(get last_rx); LTX=$(get last_tx)
+        TRX=$(get total_rx); TTX=$(get total_tx)
+
+        # Guard against counter reset on interface restart
+        if [ "$CRX" -ge "${LRX:-0}" ] && [ "$CTX" -ge "${LTX:-0}" ]; then
+            put total_rx $(( TRX + CRX - ${LRX:-0} ))
+            put total_tx $(( TTX + CTX - ${LTX:-0} ))
+        fi
+
+        put last_rx "$CRX"
+        put last_tx "$CTX"
+    fi
+    sleep "$INTERVAL"
+done

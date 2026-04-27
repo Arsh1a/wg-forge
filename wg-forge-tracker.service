@@ -1,0 +1,11 @@
+[Unit]
+Description=wg-forge Bandwidth Tracker
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/wg-forge-tracker
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,567 @@
+#!/bin/bash
+# ─────────────────────────────────────────────
+#  wg-forge - WireGuard Client Manager
+#  https://github.com/Arsh1a/wg-forge
+# ─────────────────────────────────────────────
+
+VERSION="0.1.1"
+CONFIG_FILE="/etc/wg-forge/config.conf"
+
+if [ "$1" != "setup" ]; then
+    if [ ! -f "$CONFIG_FILE" ]; then
+        echo "✗ Config not found. Run: wg-forge setup"
+        exit 1
+    fi
+    source "$CONFIG_FILE"
+fi
+
+# Helpers
+
+bytes_to_human() {
+    local B=${1:-0}
+    if   [ "$B" -ge 1073741824 ]; then printf "%.2fGB" "$(echo "scale=2; $B/1073741824" | bc)"
+    elif [ "$B" -ge 1048576 ];    then printf "%.2fMB" "$(echo "scale=2; $B/1048576"    | bc)"
+    elif [ "$B" -ge 1024 ];       then printf "%.2fKB" "$(echo "scale=2; $B/1024"       | bc)"
+    else echo "${B}B"
+    fi
+}
+
+human_to_bytes() {
+    local N U
+    N=$(echo "$1" | grep -oE '[0-9]+(\.[0-9]+)?')
+    U=$(echo "$1" | grep -oE '[A-Za-z]+' | tr '[:lower:]' '[:upper:]')
+    case "$U" in
+        GB) printf "%.0f" "$(echo "$N * 1073741824" | bc)" ;;
+        MB) printf "%.0f" "$(echo "$N * 1048576"    | bc)" ;;
+        KB) printf "%.0f" "$(echo "$N * 1024"       | bc)" ;;
+        *)  printf "%.0f" "$N" ;;
+    esac
+}
+
+next_ip() {
+    local last
+    last=$(grep -v "^#" "$CLIENTS_FILE" | awk -F: '{print $3}' | sort -t. -k4 -n | tail -1 | cut -d/ -f1)
+    if [ -z "$last" ]; then
+        echo "${WG_SUBNET}.3"
+    else
+        local base num
+        base=$(echo "$last" | cut -d. -f1-3)
+        num=$(echo  "$last" | cut -d. -f4)
+        echo "$base.$((num+1))"
+    fi
+}
+
+update_lifetime() {
+    local NAME=$1 DELTA=${2:-0}
+    grep -q "^$NAME:" "$TOTAL_FILE" || echo "$NAME:0" >> "$TOTAL_FILE"
+    [ "$DELTA" -le 0 ] && return
+    local OLD NEW
+    OLD=$(grep "^$NAME:" "$TOTAL_FILE" | cut -d: -f2)
+    NEW=$((OLD + DELTA))
+    awk -F: -v n="$NAME" -v v="$NEW" \
+        'BEGIN{OFS=":"} $1==n{$2=v} {print}' \
+        "$TOTAL_FILE" > /tmp/.wgf_tot && mv /tmp/.wgf_tot "$TOTAL_FILE"
+}
+
+lim_set_field() {
+    awk -F: -v n="$1" -v f="$2" -v v="$3" \
+        'BEGIN{OFS=":"} $1==n{$f=v} {print}' \
+        "$LIMITS_FILE" > /tmp/.wgf_lim && mv /tmp/.wgf_lim "$LIMITS_FILE"
+}
+
+handshake_age() {
+    local HS=$1
+    [ "$HS" = "0" ] && echo "never" && return
+    local D=$(( $(date +%s) - HS ))
+    if   [ $D -lt 60 ];   then echo "${D}s ago"
+    elif [ $D -lt 3600 ]; then echo "$((D/60))m ago"
+    else                       echo "$((D/3600))h ago"
+    fi
+}
+
+wg_peer_info() { wg show "$WG_INTERFACE" dump | grep "$1"; }
+
+print_qr() {
+    local CONF=$1
+    if command -v qrencode >/dev/null 2>&1; then
+        echo ""
+        echo "──── QR Code ───────────────────────────"
+        echo "$CONF" | qrencode -t ansiutf8
+        echo "────────────────────────────────────────"
+    fi
+}
+
+# Commands
+
+cmd_setup() {
+    echo "╔══════════════════════════════╗"
+    echo "║     wg-forge  Setup          ║"
+    echo "╚══════════════════════════════╝"
+    echo ""
+
+    mkdir -p /etc/wg-forge
+
+    read -rp "WireGuard interface         [wg0]:     " WG_IF;   WG_IF=${WG_IF:-wg0}
+    read -rp "VPS public IP:                         " VPS_IP
+    read -rp "WireGuard listen port       [51820]:   " WG_PORT; WG_PORT=${WG_PORT:-51820}
+    read -rp "WireGuard subnet (3 octets) [10.99.0]: " SUBNET;  SUBNET=${SUBNET:-10.99.0}
+
+    local PUBKEY
+    PUBKEY=$(wg show "$WG_IF" public-key 2>/dev/null)
+    if [ -n "$PUBKEY" ]; then
+        echo "Auto-detected public key: $PUBKEY"
+    else
+        read -rp "VPS WireGuard public key: " PUBKEY
+    fi
+
+    cat > "$CONFIG_FILE" <<EOF
+# wg-forge configuration
+WG_INTERFACE="$WG_IF"
+VPS_PUBKEY="$PUBKEY"
+VPS_ENDPOINT="$VPS_IP:$WG_PORT"
+WG_SUBNET="$SUBNET"
+WG_CONF="/etc/wireguard/${WG_IF}.conf"
+CLIENTS_FILE="/etc/wireguard/clients.conf"
+LIMITS_FILE="/etc/wireguard/limits.conf"
+TOTAL_FILE="/etc/wireguard/total_bandwidth.conf"
+EOF
+
+    for f in "/etc/wireguard/clients.conf" \
+              "/etc/wireguard/limits.conf" \
+              "/etc/wireguard/total_bandwidth.conf"; do
+        [ -f "$f" ] || echo "# wg-forge data" > "$f"
+    done
+
+    echo ""
+    echo "✓ Config saved → $CONFIG_FILE"
+    echo "  Run 'wg-forge help' to get started."
+}
+
+cmd_add() {
+    local NAME=$1 LIMIT=$2
+    [ -z "$NAME" ] && echo "Usage: wg-forge add <n> [limit e.g. 10GB]" && exit 1
+
+    if ! echo "$NAME" | grep -qE '^[a-zA-Z0-9._-]+$'; then
+        echo "✗ Invalid name '$NAME' - only letters, digits, '.', '-', '_' allowed"
+        exit 1
+    fi
+
+    local SUFFIX FULLNAME
+    SUFFIX=$(tr -dc 'a-z0-9' < /dev/urandom | head -c 5)
+    FULLNAME="${NAME}-${SUFFIX}"
+
+    grep -q "^$FULLNAME:" "$CLIENTS_FILE" && echo "✗ Name collision - try again" && exit 1
+
+    local PRIV PUB IP
+    PRIV=$(wg genkey)
+    PUB=$(echo "$PRIV" | wg pubkey)
+    IP=$(next_ip)
+
+    mkdir -p /etc/wireguard/keys
+    printf "%s" "$PRIV" > "/etc/wireguard/keys/${FULLNAME}.key"
+    chmod 600 "/etc/wireguard/keys/${FULLNAME}.key"
+
+    if ! wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "$IP/32" 2>/dev/null; then
+        rm -f "/etc/wireguard/keys/${FULLNAME}.key"
+        echo "✗ WireGuard rejected peer - is $WG_INTERFACE up?"
+        exit 1
+    fi
+
+    echo "$FULLNAME:$PUB:$IP/32" >> "$CLIENTS_FILE"
+    printf "\n[Peer]\n# %s\nPublicKey = %s\nAllowedIPs = %s/32\n" \
+        "$FULLNAME" "$PUB" "$IP" >> "$WG_CONF"
+
+    local LIMIT_BYTES=0
+    [ -n "$LIMIT" ] && LIMIT_BYTES=$(human_to_bytes "$LIMIT")
+    echo "$FULLNAME:$LIMIT_BYTES:0:active" >> "$LIMITS_FILE"
+    grep -q "^$FULLNAME:" "$TOTAL_FILE" || echo "$FULLNAME:0" >> "$TOTAL_FILE"
+
+    if [ "$LIMIT_BYTES" -gt 0 ]; then
+        echo "✓ Client '$FULLNAME' created  [limit: $LIMIT]"
+    else
+        echo "✓ Client '$FULLNAME' created  [no limit]"
+    fi
+
+    echo ""
+    local CLIENT_CONF
+    CLIENT_CONF=$(cat <<EOF
+[Interface]
+PrivateKey = $PRIV
+Address = $IP/32
+DNS = 8.8.8.8
+
+[Peer]
+PublicKey = $VPS_PUBKEY
+Endpoint = $VPS_ENDPOINT
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+EOF
+)
+    echo "──── Config ────────────────────────────"
+    echo "$CLIENT_CONF"
+    echo "────────────────────────────────────────"
+    print_qr "$CLIENT_CONF"
+}
+
+cmd_remove() {
+    local NAME=$1
+    [ -z "$NAME" ] && echo "Usage: wg-forge remove <n>" && exit 1
+
+    local LINE
+    LINE=$(grep "^$NAME:" "$CLIENTS_FILE")
+    [ -z "$LINE" ] && echo "✗ Client '$NAME' not found" && exit 1
+
+    local PUB INFO RX TX
+    PUB=$(echo "$LINE" | cut -d: -f2)
+    INFO=$(wg_peer_info "$PUB")
+    if [ -n "$INFO" ]; then
+        RX=$(echo "$INFO" | awk '{print $6}')
+        TX=$(echo "$INFO" | awk '{print $7}')
+        update_lifetime "$NAME" $((RX + TX))
+    fi
+
+    wg set "$WG_INTERFACE" peer "$PUB" remove 2>/dev/null
+    sed -i "/^$NAME:/d" "$CLIENTS_FILE"
+    sed -i "/^$NAME:/d" "$LIMITS_FILE"
+
+    perl -i -0pe "s/\n\[Peer\]\n# $NAME\nPublicKey = [^\n]+\nAllowedIPs = [^\n]+//g" "$WG_CONF"
+    perl -i -0pe 's/\[Peer\]\n(?=\[Peer\])//g' "$WG_CONF"
+    perl -i -0pe 's/\[Peer\]\n(?=\[Peer\])//g' "$WG_CONF"
+
+    rm -f "/etc/wireguard/keys/${NAME}.key"
+    echo "✓ Client '$NAME' removed  (bandwidth history preserved)"
+}
+
+cmd_show() {
+    local NAME=$1
+    [ -z "$NAME" ] && echo "Usage: wg-forge show <n>" && exit 1
+
+    local LINE
+    LINE=$(grep "^$NAME:" "$CLIENTS_FILE")
+    [ -z "$LINE" ] && echo "✗ Client '$NAME' not found" && exit 1
+
+    local PUB IP LIM_LINE LIMIT_BYTES STATUS LIFETIME
+    PUB=$(echo "$LINE"             | cut -d: -f2)
+    IP=$(echo "$LINE"              | cut -d: -f3)
+    LIM_LINE=$(grep "^$NAME:" "$LIMITS_FILE")
+    LIMIT_BYTES=$(echo "$LIM_LINE" | cut -d: -f2)
+    STATUS=$(echo "$LIM_LINE"      | cut -d: -f4)
+    LIFETIME=$(grep "^$NAME:" "$TOTAL_FILE" | cut -d: -f2)
+
+    echo "╔══════════════════════════════════════╗"
+    printf  "║  Client: %-28s║\n" "$NAME"
+    echo   "╚══════════════════════════════════════╝"
+    printf "  %-18s %s\n" "IP:"            "${IP%/32}"
+    printf "  %-18s %s\n" "Status:"        "${STATUS:-active}"
+    if [ "${LIMIT_BYTES:-0}" -gt 0 ]; then
+        printf "  %-18s %s\n" "Limit:"     "$(bytes_to_human "$LIMIT_BYTES")"
+    else
+        printf "  %-18s %s\n" "Limit:"     "unlimited"
+    fi
+    printf "  %-18s %s\n" "Lifetime used:" "$(bytes_to_human "${LIFETIME:-0}")"
+    echo ""
+
+    local INFO HS RX TX TOTAL
+    INFO=$(wg_peer_info "$PUB")
+    if [ -n "$INFO" ]; then
+        HS=$(echo "$INFO"   | awk '{print $5}')
+        RX=$(echo "$INFO"   | awk '{print $6}')
+        TX=$(echo "$INFO"   | awk '{print $7}')
+        TOTAL=$((RX + TX))
+        printf "  %-18s %s\n" "Last handshake:" "$(handshake_age "$HS")"
+        printf "  %-18s %s\n" "Downloaded:"     "$(bytes_to_human "$RX")"
+        printf "  %-18s %s\n" "Uploaded:"       "$(bytes_to_human "$TX")"
+        printf "  %-18s %s\n" "Session total:"  "$(bytes_to_human "$TOTAL")"
+        if [ "${LIMIT_BYTES:-0}" -gt 0 ]; then
+            printf "  %-18s %s%%\n" "Usage:" \
+                "$(echo "scale=1; $TOTAL*100/$LIMIT_BYTES" | bc)"
+        fi
+    else
+        printf "  %-18s %s\n" "Last handshake:" "never"
+    fi
+
+    echo ""
+    echo "──── Config ────────────────────────────"
+    local KEYFILE="/etc/wireguard/keys/${NAME}.key"
+    if [ -f "$KEYFILE" ]; then
+        local CLIENT_CONF
+        CLIENT_CONF=$(cat <<EOF
+[Interface]
+PrivateKey = $(cat "$KEYFILE")
+Address = ${IP%/32}/32
+DNS = 8.8.8.8
+
+[Peer]
+PublicKey = $VPS_PUBKEY
+Endpoint = $VPS_ENDPOINT
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+EOF
+)
+        echo "$CLIENT_CONF"
+        echo "────────────────────────────────────────"
+        print_qr "$CLIENT_CONF"
+    else
+        echo "(Key missing - run: wg-forge regenerate $NAME)"
+        echo "────────────────────────────────────────"
+    fi
+}
+
+cmd_list() {
+    local COUNT
+    COUNT=$(grep -vc "^#" "$CLIENTS_FILE" || true)
+    echo "╔══════════════════════════════════════════════════════════════════════════════════════╗"
+    printf "║  wg-forge Clients (%d total)%55s║\n" "$COUNT" ""
+    echo "╚══════════════════════════════════════════════════════════════════════════════════════╝"
+    printf "  %-22s %-13s %-10s %-10s %-12s %-12s %s\n" \
+        "NAME" "IP" "STATUS" "SESSION" "LIMIT" "LIFETIME" "LAST SEEN"
+    echo "  ──────────────────────────────────────────────────────────────────────────────────"
+
+    grep -v "^#" "$CLIENTS_FILE" | while IFS=: read -r NAME PUB IP; do
+        local LIM_LINE LIMIT_BYTES STATUS LIFETIME INFO TOTAL_H HS
+        LIM_LINE=$(grep "^$NAME:" "$LIMITS_FILE")
+        LIMIT_BYTES=$(echo "$LIM_LINE" | cut -d: -f2)
+        STATUS=$(echo "$LIM_LINE"      | cut -d: -f4)
+        LIFETIME=$(grep "^$NAME:" "$TOTAL_FILE" | cut -d: -f2)
+        INFO=$(wg_peer_info "$PUB")
+
+        if [ -n "$INFO" ]; then
+            local HS_RAW RX TX
+            HS_RAW=$(echo "$INFO" | awk '{print $5}')
+            RX=$(echo "$INFO"     | awk '{print $6}')
+            TX=$(echo "$INFO"     | awk '{print $7}')
+            TOTAL_H=$(bytes_to_human $((RX + TX)))
+            HS=$(handshake_age "$HS_RAW")
+        else
+            TOTAL_H="0B"; HS="never"
+        fi
+
+        local LIMIT_H
+        LIMIT_H=$([ "${LIMIT_BYTES:-0}" -gt 0 ] \
+            && bytes_to_human "$LIMIT_BYTES" || echo "unlimited")
+
+        printf "  %-22s %-13s %-10s %-10s %-12s %-12s %s\n" \
+            "$NAME" "${IP%/32}" "${STATUS:-active}" \
+            "$TOTAL_H" "$LIMIT_H" \
+            "$(bytes_to_human "${LIFETIME:-0}")" "$HS"
+    done
+}
+
+cmd_disable() {
+    local NAME=$1
+    [ -z "$NAME" ] && echo "Usage: wg-forge disable <n>" && exit 1
+    local LINE PUB
+    LINE=$(grep "^$NAME:" "$CLIENTS_FILE")
+    [ -z "$LINE" ] && echo "✗ Client '$NAME' not found" && exit 1
+    PUB=$(echo "$LINE" | cut -d: -f2)
+    wg set "$WG_INTERFACE" peer "$PUB" remove 2>/dev/null
+    lim_set_field "$NAME" 4 "disabled"
+    # Comment out peer block in wg0.conf so it stays disabled after reboot
+    perl -i -0pe "s/(\[Peer\]\n# $NAME\n)/# DISABLED\n# \$1/g" "$WG_CONF"
+    echo "✓ Client '$NAME' disabled"
+}
+
+cmd_enable() {
+    local NAME=$1
+    [ -z "$NAME" ] && echo "Usage: wg-forge enable <n>" && exit 1
+    local LINE PUB IP
+    LINE=$(grep "^$NAME:" "$CLIENTS_FILE")
+    [ -z "$LINE" ] && echo "✗ Client '$NAME' not found" && exit 1
+    PUB=$(echo "$LINE" | cut -d: -f2)
+    IP=$(echo "$LINE"  | cut -d: -f3)
+    wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "$IP/32"
+    awk -F: -v n="$NAME" \
+        'BEGIN{OFS=":"} $1==n{$3="0";$4="active"} {print}' \
+        "$LIMITS_FILE" > /tmp/.wgf_lim && mv /tmp/.wgf_lim "$LIMITS_FILE"
+    # Restore peer block in wg0.conf
+    perl -i -0pe "s/# DISABLED\n# (\[Peer\]\n# $NAME\n)/\$1/g" "$WG_CONF"
+    echo "✓ Client '$NAME' enabled and usage reset"
+}
+
+cmd_extend() {
+    local NAME=$1 EXTRA=$2
+    [ -z "$NAME" ] || [ -z "$EXTRA" ] && \
+        echo "Usage: wg-forge extend <n> <amount e.g. 10GB>" && exit 1
+    grep -q "^$NAME:" "$CLIENTS_FILE" || { echo "✗ Client '$NAME' not found"; exit 1; }
+
+    local LIM_LINE OLD_LIMIT USED STATUS EXTRA_BYTES NEW_LIMIT
+    LIM_LINE=$(grep "^$NAME:" "$LIMITS_FILE")
+    OLD_LIMIT=$(echo "$LIM_LINE" | cut -d: -f2)
+    USED=$(echo "$LIM_LINE"      | cut -d: -f3)
+    STATUS=$(echo "$LIM_LINE"    | cut -d: -f4)
+    EXTRA_BYTES=$(human_to_bytes "$EXTRA")
+    NEW_LIMIT=$((OLD_LIMIT + EXTRA_BYTES))
+
+    lim_set_field "$NAME" 2 "$NEW_LIMIT"
+
+    if [ "$STATUS" = "disabled" ]; then
+        local LINE PUB IP
+        LINE=$(grep "^$NAME:" "$CLIENTS_FILE")
+        PUB=$(echo "$LINE" | cut -d: -f2)
+        IP=$(echo "$LINE"  | cut -d: -f3)
+        wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "$IP/32"
+        lim_set_field "$NAME" 4 "active"
+        echo "✓ Client '$NAME' extended by $EXTRA and re-enabled"
+    else
+        echo "✓ Client '$NAME' extended by $EXTRA"
+    fi
+
+    printf "  Used:      %s\n" "$(bytes_to_human "${USED:-0}")"
+    printf "  New limit: %s\n" "$(bytes_to_human "$NEW_LIMIT")"
+}
+
+cmd_setlimit() {
+    local NAME=$1 LIMIT=$2
+    [ -z "$NAME" ] || [ -z "$LIMIT" ] && \
+        echo "Usage: wg-forge setlimit <n> <limit e.g. 10GB>" && exit 1
+    grep -q "^$NAME:" "$CLIENTS_FILE" || { echo "✗ Client '$NAME' not found"; exit 1; }
+    lim_set_field "$NAME" 2 "$(human_to_bytes "$LIMIT")"
+    echo "✓ Limit for '$NAME' set to $LIMIT"
+}
+
+cmd_regenerate() {
+    local NAME=$1
+    [ -z "$NAME" ] && echo "Usage: wg-forge regenerate <n>" && exit 1
+    local LINE
+    LINE=$(grep "^$NAME:" "$CLIENTS_FILE")
+    [ -z "$LINE" ] && echo "✗ Client '$NAME' not found" && exit 1
+
+    local OLD_PUB IP PRIV PUB
+    OLD_PUB=$(echo "$LINE" | cut -d: -f2)
+    IP=$(echo "$LINE"      | cut -d: -f3)
+    PRIV=$(wg genkey)
+    PUB=$(echo "$PRIV" | wg pubkey)
+
+    printf "%s" "$PRIV" > "/etc/wireguard/keys/${NAME}.key"
+    chmod 600 "/etc/wireguard/keys/${NAME}.key"
+
+    wg set "$WG_INTERFACE" peer "$OLD_PUB" remove 2>/dev/null
+    wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "$IP/32"
+    sed -i "s/^$NAME:$OLD_PUB:/$NAME:$PUB:/" "$CLIENTS_FILE"
+    sed -i "/# $NAME/{n;s/PublicKey = .*/PublicKey = $PUB/}" "$WG_CONF"
+
+    echo "✓ Client '$NAME' regenerated"
+    echo ""
+    echo "──── New Config ────────────────────────"
+    cat <<EOF
+[Interface]
+PrivateKey = $PRIV
+Address = ${IP%/32}/32
+DNS = 8.8.8.8
+
+[Peer]
+PublicKey = $VPS_PUBKEY
+Endpoint = $VPS_ENDPOINT
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+EOF
+    echo "────────────────────────────────────────"
+}
+
+cmd_checklimits() {
+    grep -v "^#" "$CLIENTS_FILE" | while IFS=: read -r NAME PUB IP; do
+        local INFO RX TX TOTAL LIM_LINE LIMIT_BYTES LAST STATUS
+        INFO=$(wg_peer_info "$PUB")
+        [ -z "$INFO" ] && continue
+
+        RX=$(echo "$INFO"    | awk '{print $6}')
+        TX=$(echo "$INFO"    | awk '{print $7}')
+        TOTAL=$((RX + TX))
+
+        LIM_LINE=$(grep "^$NAME:" "$LIMITS_FILE")
+        [ -z "$LIM_LINE" ] && continue
+        LIMIT_BYTES=$(echo "$LIM_LINE" | cut -d: -f2)
+        LAST=$(echo "$LIM_LINE"        | cut -d: -f3)
+        STATUS=$(echo "$LIM_LINE"      | cut -d: -f4)
+
+        # Update session counter
+        lim_set_field "$NAME" 3 "$TOTAL"
+
+        # Update lifetime
+        grep -q "^$NAME:" "$TOTAL_FILE" || echo "$NAME:0" >> "$TOTAL_FILE"
+        if [ "$TOTAL" -gt "${LAST:-0}" ]; then
+            local DIFF OLD_L
+            DIFF=$((TOTAL - ${LAST:-0}))
+            OLD_L=$(grep "^$NAME:" "$TOTAL_FILE" | cut -d: -f2)
+            awk -F: -v n="$NAME" -v v="$((OLD_L + DIFF))" \
+                'BEGIN{OFS=":"} $1==n{$2=v} {print}' \
+                "$TOTAL_FILE" > /tmp/.wgf_tot && mv /tmp/.wgf_tot "$TOTAL_FILE"
+        fi
+
+        # Disable if over limit
+        if [ "${LIMIT_BYTES:-0}" -gt 0 ] && \
+           [ "$TOTAL" -ge "$LIMIT_BYTES" ] && \
+           [ "$STATUS" = "active" ]; then
+            wg set "$WG_INTERFACE" peer "$PUB" remove 2>/dev/null
+            lim_set_field "$NAME" 4 "disabled"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') | $NAME disabled - $(bytes_to_human "$TOTAL") used" \
+                >> /var/log/wg-forge.log
+        fi
+    done
+}
+
+cmd_total() {
+    echo "╔══════════════════════════════════════╗"
+    echo "║     wg-forge  Lifetime Bandwidth     ║"
+    echo "╚══════════════════════════════════════╝"
+    printf "  %-24s %s\n" "NAME" "LIFETIME USED"
+    echo "  ────────────────────────────────────"
+    grep -v "^#" "$TOTAL_FILE" | while IFS=: read -r NAME BYTES; do
+        printf "  %-24s %s\n" "$NAME" "$(bytes_to_human "${BYTES:-0}")"
+    done
+    echo "  ────────────────────────────────────"
+    local GRAND
+    GRAND=$(grep -v "^#" "$TOTAL_FILE" | awk -F: '{s+=$2} END{print s+0}')
+    printf "  %-24s %s\n" "GRAND TOTAL:" "$(bytes_to_human "$GRAND")"
+}
+
+cmd_help() {
+    cat <<EOF
+
+  wg-forge $VERSION - WireGuard Client Manager
+
+  Usage: wg-forge <command> [args]
+
+  ── Setup ───────────────────────────────────────
+    setup                          First-run interactive setup
+
+  ── Clients ─────────────────────────────────────
+    add      <n> [limit]        Create client  (e.g. add john 10GB)
+    remove   <n>                Remove client
+    show     <n>                Show info + config
+    list                           List all clients
+    disable  <n>                Revoke access
+    enable   <n>                Restore access + reset session
+    extend   <n> <amount>       Add bandwidth  (e.g. extend john 5GB)
+    setlimit <n> <limit>        Change bandwidth limit
+    regenerate <n>              Issue new keypair
+
+  ── Stats ───────────────────────────────────────
+    total                          Lifetime bandwidth per user
+    checklimits                    Enforce limits (run by cron)
+
+  ── Other ───────────────────────────────────────
+    version                        Show version
+
+EOF
+}
+
+# Dispatch
+
+case "$1" in
+    setup)       cmd_setup                 ;;
+    add)         cmd_add         "$2" "$3" ;;
+    remove)      cmd_remove      "$2"      ;;
+    show)        cmd_show        "$2"      ;;
+    list)        cmd_list                  ;;
+    disable)     cmd_disable     "$2"      ;;
+    enable)      cmd_enable      "$2"      ;;
+    extend)      cmd_extend      "$2" "$3" ;;
+    setlimit)    cmd_setlimit    "$2" "$3" ;;
+    regenerate)  cmd_regenerate  "$2"      ;;
+    checklimits) cmd_checklimits           ;;
+    total)       cmd_total                 ;;
+    version|--version|-v) echo "wg-forge $VERSION" ;;
+    help|--help|-h|"") cmd_help           ;;
+    *) echo "Unknown command: $1  (run 'wg-forge help')" && exit 1 ;;
+esac
