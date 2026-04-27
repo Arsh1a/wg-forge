@@ -288,13 +288,7 @@ EOF
         cmd_setup_nginx "$WEB_DOMAIN" "$WEB_PORT"
     fi
 
-    echo ""
-    if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
-        echo "  Dashboard: https://$WEB_DOMAIN/$SECRET_SLUG"
-    else
-        echo "  Dashboard: http://$(curl -fsSL --max-time 3 https://api.ipify.org 2>/dev/null):$WEB_PORT/$SECRET_SLUG"
-    fi
-    echo "  Save this URL — it won't be shown again."
+    cmd_web
     echo "  Run 'wg-forge add <name>' to create your first client."
 }
 
@@ -716,6 +710,36 @@ cmd_update() {
     curl -fsSL "https://raw.githubusercontent.com/Arsh1a/wg-forge/$REF/install.sh" | bash -s -- "$REF"
 }
 
+cmd_web() {
+    local conf="/etc/wg-forge/web.conf"
+    [ ! -f "$conf" ] && echo "✗ Web dashboard is not configured. Run 'wg-forge setup'." && exit 1
+
+    # shellcheck source=/dev/null
+    source "$conf"
+
+    local BASE_URL
+    if [ -n "$WEB_DOMAIN" ]; then
+        BASE_URL="https://$WEB_DOMAIN"
+    else
+        local PUBLIC_IP
+        PUBLIC_IP=$(curl -fsSL --max-time 5 https://api.ipify.org 2>/dev/null || echo "localhost")
+        BASE_URL="http://${PUBLIC_IP}:${WEB_PORT}"
+    fi
+
+    echo ""
+    echo "── Web Dashboard ───────────────────────────"
+    echo "  User:    $WEB_USER"
+    echo "  Port:    $WEB_PORT"
+    if [ -n "$SECRET_PATH" ]; then
+        echo "  URL:     ${BASE_URL}/${SECRET_PATH}"
+    else
+        echo "  URL:     ${BASE_URL}"
+        echo "  Secret:  (none configured)"
+    fi
+    echo "  Status:  $(systemctl is-active wg-forge-web 2>/dev/null || echo 'unknown')"
+    echo ""
+}
+
 cmd_help() {
     cat <<EOF
 
@@ -744,6 +768,7 @@ cmd_help() {
   ── Other ───────────────────────────────────────
     version                        Show version
     update [version]               Update to latest (or a specific version e.g. v0.2.1)
+    web                            Show web dashboard URL, user, and status
 
 EOF
 }
@@ -765,6 +790,7 @@ case "$1" in
     total)       cmd_total                 ;;
     version|--version|-v) echo "wg-forge $VERSION" ;;
     update)      cmd_update      "$2"      ;;
+    web)         cmd_web                  ;;
     help|--help|-h|"") cmd_help           ;;
     *) echo "Unknown command: $1  (run 'wg-forge help')" && exit 1 ;;
 esac
