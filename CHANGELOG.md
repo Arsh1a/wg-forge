@@ -5,19 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-04-27
+
+### Added
+
+- Web dashboard at `web/`
+
 ## [0.2.3] - 2026-04-27
 
 ### Changed
+
 - Bandwidth limit check interval reduced from 5 minutes to 30 seconds for faster enforcement
 
 ## [0.2.2] - 2026-04-27
 
 ### Added
+
 - `wg-forge update [version]` — updates wg-forge in-place by re-running the installer; optionally pin to a specific version (e.g. `v0.2.1`)
 
 ## [0.2.1] - 2026-04-27
 
 ### Fixed
+
 - Replaced unreliable cron job with a systemd timer (`wg-forge-checklimits.timer`) for bandwidth limit enforcement — ensures limits are checked every 5 minutes regardless of whether cron is installed
 
 ## [0.2.0] - 2026-04-27

@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.2.3"
+VERSION="0.3.0"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -196,8 +196,105 @@ EOF
     echo "✓ Server public key:  $SERVER_PUB"
     echo "✓ Endpoint:           $VPS_IP:$WG_PORT"
     echo "✓ VPN subnet:         ${SUBNET}.0/24"
+
+    # Web UI setup
     echo ""
+    read -rp "Set up web dashboard? [y/N]: " WANT_WEB
+    if [[ "$WANT_WEB" =~ ^[Yy]$ ]]; then
+        cmd_setup_web
+    else
+        echo ""
+        echo "  Run 'wg-forge add <name>' to create your first client."
+    fi
+}
+
+cmd_setup_web() {
+    echo ""
+    echo "── Web Dashboard Setup ─────────────────"
+
+    read -rp "Web UI port                 [8080]: " WEB_PORT; WEB_PORT=${WEB_PORT:-8080}
+    read -rp "Admin username              [admin]: " WEB_USER; WEB_USER=${WEB_USER:-admin}
+    read -rsp "Admin password: " WEB_PASS; echo
+    read -rsp "Confirm password: " WEB_PASS2; echo
+    [ "$WEB_PASS" != "$WEB_PASS2" ] && echo "✗ Passwords do not match" && exit 1
+    [ -z "$WEB_PASS" ] && echo "✗ Password cannot be empty" && exit 1
+
+    read -rp "Use domain + HTTPS (nginx)? [y/N]: " WANT_HTTPS
+    local WEB_DOMAIN=""
+    if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
+        read -rp "Domain name (e.g. vpn.example.com): " WEB_DOMAIN
+        [ -z "$WEB_DOMAIN" ] && echo "✗ Domain is required for HTTPS" && exit 1
+    fi
+
+    # Hash password: salt:sha256(salt+pass)
+    local WEB_SALT WEB_HASH
+    WEB_SALT=$(openssl rand -hex 16)
+    WEB_HASH=$(echo -n "${WEB_SALT}${WEB_PASS}" | sha256sum | awk '{print $1}')
+
+    cat > /etc/wg-forge/web.conf <<EOF
+WEB_PORT="$WEB_PORT"
+WEB_USER="$WEB_USER"
+WEB_PASS_HASH="${WEB_SALT}:${WEB_HASH}"
+WEB_DOMAIN="$WEB_DOMAIN"
+PORT="$WEB_PORT"
+EOF
+    chmod 600 /etc/wg-forge/web.conf
+
+    # Build web app
+    if [ ! -d /opt/wg-forge-web ]; then
+        echo "✗ Web app not found at /opt/wg-forge-web — run the installer first"
+        exit 1
+    fi
+
+    # Enable web service
+    systemctl enable --now wg-forge-web
+    echo "✓ Web dashboard started on port $WEB_PORT"
+
+    # Setup nginx + SSL if requested
+    if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
+        cmd_setup_nginx "$WEB_DOMAIN" "$WEB_PORT"
+    fi
+
+    echo ""
+    if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
+        echo "  Dashboard: https://$WEB_DOMAIN"
+    else
+        echo "  Dashboard: http://$(curl -fsSL --max-time 3 https://api.ipify.org 2>/dev/null):$WEB_PORT"
+    fi
     echo "  Run 'wg-forge add <name>' to create your first client."
+}
+
+cmd_setup_nginx() {
+    local DOMAIN=$1 PORT=$2
+
+    if ! command -v nginx >/dev/null 2>&1; then
+        echo "Installing nginx..."
+        install_wg_deps nginx
+    fi
+    if ! command -v certbot >/dev/null 2>&1; then
+        echo "Installing certbot..."
+        install_wg_deps certbot python3-certbot-nginx
+    fi
+
+    cat > "/etc/nginx/sites-available/wg-forge" <<EOF
+server {
+    listen 80;
+    server_name $DOMAIN;
+
+    location / {
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+    }
+}
+EOF
+
+    ln -sf /etc/nginx/sites-available/wg-forge /etc/nginx/sites-enabled/wg-forge
+    nginx -t && systemctl reload nginx
+
+    certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos --email "admin@$DOMAIN" --redirect
+    echo "✓ HTTPS configured for $DOMAIN"
 }
 
 cmd_add() {

@@ -1,0 +1,14 @@
+[Unit]
+Description=wg-forge Web Dashboard
+After=network.target wg-quick@wg0.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/wg-forge-web
+ExecStart=/usr/local/bin/node /opt/wg-forge-web/build/index.js
+Restart=always
+RestartSec=5
+EnvironmentFile=/etc/wg-forge/web.conf
+
+[Install]
+WantedBy=multi-user.target

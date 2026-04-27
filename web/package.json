@@ -1,0 +1,26 @@
+{
+  "name": "wg-forge-web",
+  "version": "0.2.3",
+  "private": true,
+  "scripts": {
+    "dev": "vite dev",
+    "check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
+    "build": "vite build",
+    "start": "node build/index.js"
+  },
+  "dependencies": {
+    "@sveltejs/adapter-node": "^5.2.0",
+    "@sveltejs/kit": "^2.58.0",
+    "svelte": "^5.0.0"
+  },
+  "devDependencies": {
+    "@sveltejs/vite-plugin-svelte": "^5.1.1",
+    "@tailwindcss/vite": "^4.0.0",
+    "@types/node": "^20.0.0",
+    "svelte-check": "^4.0.0",
+    "tailwindcss": "^4.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^6.4.2"
+  },
+  "type": "module"
+}
