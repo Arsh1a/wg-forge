@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.2.1"
+VERSION="0.2.2"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -578,6 +578,13 @@ cmd_total() {
     printf "  %-24s %s\n" "GRAND TOTAL:" "$(bytes_to_human "$GRAND")"
 }
 
+cmd_update() {
+    [ "$EUID" -ne 0 ] && echo "✗ Run as root" && exit 1
+    local REF=${1:-main}
+    echo "Updating wg-forge to $REF..."
+    curl -fsSL "https://raw.githubusercontent.com/Arsh1a/wg-forge/$REF/install.sh" | bash -s -- "$REF"
+}
+
 cmd_help() {
     cat <<EOF
 
@@ -605,6 +612,7 @@ cmd_help() {
 
   ── Other ───────────────────────────────────────
     version                        Show version
+    update [version]               Update to latest (or a specific version e.g. v0.2.1)
 
 EOF
 }
@@ -625,6 +633,7 @@ case "$1" in
     checklimits) cmd_checklimits           ;;
     total)       cmd_total                 ;;
     version|--version|-v) echo "wg-forge $VERSION" ;;
+    update)      cmd_update      "$2"      ;;
     help|--help|-h|"") cmd_help           ;;
     *) echo "Unknown command: $1  (run 'wg-forge help')" && exit 1 ;;
 esac
