@@ -12,18 +12,18 @@ sudo wg-forge setup
 ## Commands
 
 ```
-wg-forge setup                    First-run setup
+wg-forge setup                 First-run setup
 wg-forge add <n> [limit]       Create client  (e.g. add john 10GB)
 wg-forge remove <n>            Remove client
 wg-forge show <n>              Show info + config
-wg-forge list                     List all clients
+wg-forge list                  List all clients
 wg-forge disable <n>           Revoke access
 wg-forge enable <n>            Restore + reset session
 wg-forge extend <n> <amount>   Add bandwidth  (e.g. extend john 5GB)
 wg-forge setlimit <n> <limit>  Change limit
 wg-forge regenerate <n>        Issue new keypair
-wg-forge total                    Lifetime usage per user
-wg-forge checklimits              Enforce limits (run by cron)
+wg-forge total                 Lifetime usage per user
+wg-forge checklimits           Enforce limits (run by cron)
 ```
 
 ## Requirements

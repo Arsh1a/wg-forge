@@ -1,0 +1,6 @@
+[Unit]
+Description=wg-forge bandwidth limit enforcement
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/wg-forge checklimits

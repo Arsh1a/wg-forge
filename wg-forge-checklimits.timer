@@ -1,0 +1,11 @@
+[Unit]
+Description=wg-forge bandwidth limit enforcement (every 5 minutes)
+Requires=wg-forge-checklimits.service
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+Unit=wg-forge-checklimits.service
+
+[Install]
+WantedBy=timers.target

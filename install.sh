@@ -45,26 +45,29 @@ if [ ${#MISSING[@]} -gt 0 ]; then
 fi
 
 echo "Downloading wg-forge..."
-curl -fsSL "$BASE_URL/wg-forge"                  -o /usr/local/bin/wg-forge
-curl -fsSL "$BASE_URL/wg-forge-tracker"          -o /usr/local/bin/wg-forge-tracker
-curl -fsSL "$BASE_URL/wg-forge-tracker.service"  -o /tmp/wg-forge-tracker.service
+curl -fsSL "$BASE_URL/wg-forge"                         -o /usr/local/bin/wg-forge
+curl -fsSL "$BASE_URL/wg-forge-tracker"                 -o /usr/local/bin/wg-forge-tracker
+curl -fsSL "$BASE_URL/wg-forge-tracker.service"         -o /tmp/wg-forge-tracker.service
+curl -fsSL "$BASE_URL/wg-forge-checklimits.service"     -o /tmp/wg-forge-checklimits.service
+curl -fsSL "$BASE_URL/wg-forge-checklimits.timer"       -o /tmp/wg-forge-checklimits.timer
 
 chmod 755 /usr/local/bin/wg-forge
 chmod 755 /usr/local/bin/wg-forge-tracker
 mkdir -p /etc/wg-forge
 
-# Systemd service for bandwidth tracker
 if [ -d /etc/systemd/system ]; then
-    install -m 644 /tmp/wg-forge-tracker.service /etc/systemd/system/wg-forge-tracker.service
-    rm -f /tmp/wg-forge-tracker.service
+    install -m 644 /tmp/wg-forge-tracker.service     /etc/systemd/system/wg-forge-tracker.service
+    install -m 644 /tmp/wg-forge-checklimits.service /etc/systemd/system/wg-forge-checklimits.service
+    install -m 644 /tmp/wg-forge-checklimits.timer   /etc/systemd/system/wg-forge-checklimits.timer
+    rm -f /tmp/wg-forge-tracker.service /tmp/wg-forge-checklimits.service /tmp/wg-forge-checklimits.timer
     systemctl daemon-reload
     systemctl enable --now wg-forge-tracker
+    systemctl enable --now wg-forge-checklimits.timer
     echo "✓ wg-forge-tracker service enabled and started"
+    echo "✓ wg-forge-checklimits timer enabled (runs every 5 minutes)"
+else
+    echo "✗ systemd not found — start wg-forge checklimits manually via cron"
 fi
-
-# Cron - check limits every 5 minutes
-( crontab -l 2>/dev/null | grep -v "wg-forge checklimits"
-  echo "*/5 * * * * /usr/local/bin/wg-forge checklimits" ) | crontab -
 
 echo "✓ wg-forge installed"
 echo ""
