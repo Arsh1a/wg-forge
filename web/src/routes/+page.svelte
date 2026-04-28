@@ -60,7 +60,19 @@
   }
 
   async function copyConfig() {
-    await navigator.clipboard.writeText(configText);
+    try {
+      await navigator.clipboard.writeText(configText);
+    } catch {
+      // fallback for non-HTTPS
+      const ta = document.createElement('textarea');
+      ta.value = configText;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+    }
     copied = true;
     setTimeout(() => (copied = false), 2000);
   }
@@ -203,7 +215,7 @@
     <div class="bg-surface border border-border rounded-2xl w-full max-w-lg mx-4 p-6 flex flex-col gap-5">
 
       <div class="flex items-center justify-between">
-        <h3 class="font-semibold text-base">Share config — <span class="text-accent">{shareClient}</span></h3>
+        <h3 class="font-semibold text-base text-white">Share config — <span class="text-accent">{shareClient}</span></h3>
         <button onclick={closeShare} class="text-muted hover:text-white text-xl leading-none">&times;</button>
       </div>
 
