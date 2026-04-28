@@ -13,7 +13,9 @@
   let configText   = $state('');
   let qrDataUrl    = $state('');
   let shareLoading = $state(false);
-  let copied       = $state(false);
+  let copied          = $state(false);
+  let regenerating    = $state(false);
+  let regenConfirm    = $state(false);
 
   const TABLE_HEADERS = ['Name', 'IP', 'Status', 'Session', 'Limit', 'Lifetime', 'Last seen', 'Actions'];
 
@@ -35,9 +37,26 @@
   }
 
   function closeShare() {
-    shareClient = null;
-    configText  = '';
-    qrDataUrl   = '';
+    shareClient  = null;
+    configText   = '';
+    qrDataUrl    = '';
+    regenConfirm = false;
+  }
+
+  async function regenerateKey() {
+    if (!shareClient) return;
+    regenerating = true;
+    regenConfirm = false;
+    try {
+      const fd = new FormData();
+      fd.set('name', shareClient);
+      fd.set('action', 'regenerate');
+      await fetch('/?/action', { method: 'POST', body: fd });
+      // reload the config after regeneration
+      await openShare(shareClient);
+    } finally {
+      regenerating = false;
+    }
   }
 
   async function copyConfig() {
@@ -202,9 +221,20 @@
           </button>
         </div>
 
-        <div class="flex gap-3">
+        <div class="flex gap-3 flex-wrap items-center">
           <Button variant="primary" onclick={copyConfig}>{copied ? 'Copied!' : 'Copy text'}</Button>
           <Button onclick={downloadConfig}>Download .conf</Button>
+          <div class="ml-auto flex gap-2 items-center">
+            {#if regenConfirm}
+              <span class="text-xs text-muted">Revokes current config!</span>
+              <Button variant="danger" onclick={regenerateKey} disabled={regenerating}>
+                {regenerating ? 'Regenerating…' : 'Confirm'}
+              </Button>
+              <Button onclick={() => regenConfirm = false}>Cancel</Button>
+            {:else}
+              <Button variant="danger" onclick={() => regenConfirm = true}>Regenerate key</Button>
+            {/if}
+          </div>
         </div>
 
         {#if qrDataUrl}

@@ -12,6 +12,7 @@
     value,
     class:   cls = '',
     onclick,
+    disabled = false,
     children
   }: {
     variant?:  Variant;
@@ -21,6 +22,7 @@
     value?:    string;
     class?:    string;
     onclick?:  (e: MouseEvent) => void;
+    disabled?: boolean;
     children:  Snippet;
   } = $props();
 
@@ -39,6 +41,6 @@
   };
 </script>
 
-<button {type} {name} {value} {onclick} class="{base} {sizes[size]} {variants[variant]} {cls}">
+<button {type} {name} {value} {onclick} {disabled} class="{base} {sizes[size]} {variants[variant]} {cls} disabled:opacity-50 disabled:cursor-not-allowed">
   {@render children()}
 </button>

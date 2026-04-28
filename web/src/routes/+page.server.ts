@@ -28,8 +28,9 @@ export const actions: Actions = {
     const act    = data.get('action') as string;
     const amount = (data.get('amount') as string)?.trim();
     try {
-      if (act === 'extend') runForge(`extend ${name} ${amount}`);
-      else                  runForge(`${act} ${name}`);
+      if (act === 'extend')     runForge(`extend ${name} ${amount}`);
+      else if (act === 'regenerate') runForge(`regenerate ${name}`);
+      else                           runForge(`${act} ${name}`);
     } catch (e) {
       return fail(500, { error: (e as Error).message });
     }
