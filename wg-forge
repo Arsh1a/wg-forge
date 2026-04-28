@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.3.2"
+VERSION="0.3.3"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -706,8 +706,70 @@ cmd_total() {
 cmd_update() {
     [ "$EUID" -ne 0 ] && echo "✗ Run as root" && exit 1
     local REF=${1:-main}
-    echo "Updating wg-forge to $REF..."
-    curl -fsSL "https://raw.githubusercontent.com/Arsh1a/wg-forge/$REF/install.sh" | bash -s -- "$REF"
+    local BASE_URL="https://raw.githubusercontent.com/Arsh1a/wg-forge/$REF"
+
+    echo "╔══════════════════════════════╗"
+    echo "║     wg-forge  Update         ║"
+    echo "╚══════════════════════════════╝"
+    echo ""
+    echo "Updating CLI to $REF..."
+
+    # Update binaries
+    curl -fsSL "$BASE_URL/wg-forge"         -o /usr/local/bin/wg-forge
+    curl -fsSL "$BASE_URL/wg-forge-tracker" -o /usr/local/bin/wg-forge-tracker
+    chmod 755 /usr/local/bin/wg-forge /usr/local/bin/wg-forge-tracker
+    echo "✓ CLI updated"
+
+    # Update systemd units
+    if [ -d /etc/systemd/system ]; then
+        curl -fsSL "$BASE_URL/wg-forge-tracker.service"         -o /etc/systemd/system/wg-forge-tracker.service
+        curl -fsSL "$BASE_URL/wg-forge-checklimits.service"     -o /etc/systemd/system/wg-forge-checklimits.service
+        curl -fsSL "$BASE_URL/wg-forge-checklimits.timer"       -o /etc/systemd/system/wg-forge-checklimits.timer
+        curl -fsSL "$BASE_URL/wg-forge-web.service"             -o /etc/systemd/system/wg-forge-web.service
+        systemctl daemon-reload
+        systemctl restart wg-forge-tracker wg-forge-checklimits.timer 2>/dev/null || true
+        echo "✓ Systemd units updated"
+    fi
+
+    # Update and rebuild web dashboard if it was previously set up
+    if [ -f /etc/wg-forge/web.conf ]; then
+        echo ""
+        echo "Updating web dashboard..."
+        local REPO_TMP
+        REPO_TMP=$(mktemp -d)
+        curl -fsSL "https://api.github.com/repos/Arsh1a/wg-forge/tarball/$REF" -o "$REPO_TMP/repo.tar.gz"
+        tar -xzf "$REPO_TMP/repo.tar.gz" -C "$REPO_TMP"
+        local EXTRACTED_DIR
+        EXTRACTED_DIR=$(find "$REPO_TMP" -mindepth 1 -maxdepth 1 -type d | head -1)
+        if [ -n "$EXTRACTED_DIR" ] && [ -d "$EXTRACTED_DIR/web" ]; then
+            # Preserve node_modules if present to avoid full reinstall
+            if [ -d /opt/wg-forge-web/node_modules ]; then
+                mv /opt/wg-forge-web/node_modules "$REPO_TMP/node_modules_bak"
+            fi
+            rm -rf /opt/wg-forge-web
+            mv "$EXTRACTED_DIR/web" /opt/wg-forge-web
+            if [ -d "$REPO_TMP/node_modules_bak" ]; then
+                mv "$REPO_TMP/node_modules_bak" /opt/wg-forge-web/node_modules
+            fi
+            echo "✓ Web source updated"
+        else
+            echo "⚠ Web source not found in tarball — skipping web update"
+        fi
+        rm -rf "$REPO_TMP"
+
+        echo "Installing web dependencies..."
+        cd /opt/wg-forge-web && npm install --silent
+        echo "Building web dashboard..."
+        npm run build --silent
+        echo "✓ Web dashboard built"
+
+        systemctl restart wg-forge-web
+        echo "✓ Web dashboard restarted"
+    fi
+
+    echo ""
+    echo "✓ wg-forge updated successfully"
+    /usr/local/bin/wg-forge version
 }
 
 cmd_web() {
