@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.3.8"
+VERSION="0.3.9"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -282,6 +282,12 @@ EOF
     systemctl daemon-reload
     systemctl enable --now wg-forge-web
     echo "✓ Web dashboard started on port $WEB_PORT"
+
+    # Open firewall port if ufw is active and no HTTPS (nginx handles 80/443)
+    if ! [[ "$WANT_HTTPS" =~ ^[Yy]$ ]] && command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+        ufw allow "$WEB_PORT/tcp" >/dev/null
+        echo "✓ ufw: port $WEB_PORT opened"
+    fi
 
     # Setup nginx + SSL if requested
     if [[ "$WANT_HTTPS" =~ ^[Yy]$ ]]; then
