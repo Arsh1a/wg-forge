@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.3.9"
+VERSION="0.4.0"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -298,16 +298,31 @@ EOF
     echo "  Run 'wg-forge add <name>' to create your first client."
 }
 
+install_pkgs() {
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get install -y "$@"
+    elif command -v dnf >/dev/null 2>&1; then
+        dnf install -y "$@"
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y "$@"
+    elif command -v pacman >/dev/null 2>&1; then
+        pacman -Sy --noconfirm "$@"
+    else
+        echo "✗ Unsupported package manager — install manually: $*"
+        exit 1
+    fi
+}
+
 cmd_setup_nginx() {
     local DOMAIN=$1 PORT=$2
 
     if ! command -v nginx >/dev/null 2>&1; then
         echo "Installing nginx..."
-        install_wg_deps nginx
+        install_pkgs nginx
     fi
     if ! command -v certbot >/dev/null 2>&1; then
         echo "Installing certbot..."
-        install_wg_deps certbot python3-certbot-nginx
+        install_pkgs certbot python3-certbot-nginx
     fi
 
     cat > "/etc/nginx/sites-available/wg-forge" <<EOF
@@ -745,6 +760,7 @@ cmd_update() {
         local EXTRACTED_DIR
         EXTRACTED_DIR=$(find "$REPO_TMP" -mindepth 1 -maxdepth 1 -type d | head -1)
         if [ -n "$EXTRACTED_DIR" ] && [ -d "$EXTRACTED_DIR/web" ]; then
+            cd /tmp
             rm -rf /opt/wg-forge-web
             mv "$EXTRACTED_DIR/web" /opt/wg-forge-web
             echo "✓ Web source updated"

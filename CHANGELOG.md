@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-04-29
+
+### Fixed
+
+- nginx and certbot now install correctly during HTTPS setup — `install_wg_deps` was hardcoded to WireGuard packages and ignored arguments; replaced with a generic `install_pkgs` helper
+- `wg-forge update` no longer errors with `getcwd` — fixed by `cd /tmp` before removing the web directory
+- Removed `setup-web` subcommand (was incomplete)
+
 ## [0.3.9] - 2026-04-29
 
 ### Fixed
