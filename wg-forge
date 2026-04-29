@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.3.6"
+VERSION="0.3.7"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -557,7 +557,7 @@ cmd_enable() {
     [ -z "$LINE" ] && echo "✗ Client '$NAME' not found" && exit 1
     PUB=$(echo "$LINE" | cut -d: -f2)
     IP=$(echo "$LINE"  | cut -d: -f3)
-    wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "$IP/32"
+    wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "${IP%/32}/32"
     awk -F: -v n="$NAME" \
         'BEGIN{OFS=":"} $1==n{$3="0";$4="active"} {print}' \
         "$LIMITS_FILE" > /tmp/.wgf_lim && mv /tmp/.wgf_lim "$LIMITS_FILE"
@@ -587,7 +587,7 @@ cmd_extend() {
         LINE=$(grep "^$NAME:" "$CLIENTS_FILE")
         PUB=$(echo "$LINE" | cut -d: -f2)
         IP=$(echo "$LINE"  | cut -d: -f3)
-        wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "$IP/32"
+        wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "${IP%/32}/32"
         lim_set_field "$NAME" 4 "active"
         echo "✓ Client '$NAME' extended by $EXTRA and re-enabled"
     else
@@ -624,7 +624,7 @@ cmd_regenerate() {
     chmod 600 "/etc/wireguard/keys/${NAME}.key"
 
     wg set "$WG_INTERFACE" peer "$OLD_PUB" remove 2>/dev/null
-    wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "$IP/32"
+    wg set "$WG_INTERFACE" peer "$PUB" allowed-ips "${IP%/32}/32"
     sed -i "s/^$NAME:$OLD_PUB:/$NAME:$PUB:/" "$CLIENTS_FILE"
     sed -i "/# $NAME/{n;s/PublicKey = .*/PublicKey = $PUB/}" "$WG_CONF"
 

@@ -117,7 +117,11 @@
     {/if}
 
     {#if showAdd}
-      <form method="POST" action="?/add" use:enhance class="flex gap-3 mb-6 items-center">
+      <form
+        method="POST" action="?/add"
+        use:enhance={() => ({ update }) => update().then(() => { showAdd = false; })}
+        class="flex gap-3 mb-6 items-center"
+      >
         <Input name="name" placeholder="Name (e.g. john)" required class="w-52" />
         <Input name="limit" placeholder="Limit e.g. 10GB (optional)" class="w-56" />
         <Button type="submit" variant="primary">Create</Button>
@@ -234,7 +238,6 @@
         </div>
 
         <div class="flex gap-3 flex-wrap items-center">
-          <Button variant="primary" onclick={copyConfig}>{copied ? 'Copied!' : 'Copy text'}</Button>
           <Button onclick={downloadConfig}>Download .conf</Button>
           <div class="ml-auto flex gap-2 items-center">
             {#if regenConfirm}
