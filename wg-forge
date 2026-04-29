@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.3.7"
+VERSION="0.3.8"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -712,16 +712,9 @@ cmd_update() {
     echo "║     wg-forge  Update         ║"
     echo "╚══════════════════════════════╝"
     echo ""
-    echo "Updating CLI to $REF..."
-
-    # Update binaries
-    curl -fsSL "$BASE_URL/wg-forge"         -o /usr/local/bin/wg-forge
-    curl -fsSL "$BASE_URL/wg-forge-tracker" -o /usr/local/bin/wg-forge-tracker
-    chmod 755 /usr/local/bin/wg-forge /usr/local/bin/wg-forge-tracker
-    echo "✓ CLI updated"
-
-    # Update systemd units
+    # Update systemd units first
     if [ -d /etc/systemd/system ]; then
+        echo "Updating systemd units..."
         curl -fsSL "$BASE_URL/wg-forge-tracker.service"         -o /etc/systemd/system/wg-forge-tracker.service
         curl -fsSL "$BASE_URL/wg-forge-checklimits.service"     -o /etc/systemd/system/wg-forge-checklimits.service
         curl -fsSL "$BASE_URL/wg-forge-checklimits.timer"       -o /etc/systemd/system/wg-forge-checklimits.timer
@@ -730,6 +723,10 @@ cmd_update() {
         systemctl restart wg-forge-tracker wg-forge-checklimits.timer 2>/dev/null || true
         echo "✓ Systemd units updated"
     fi
+
+    # Update tracker binary
+    curl -fsSL "$BASE_URL/wg-forge-tracker" -o /usr/local/bin/wg-forge-tracker
+    chmod 755 /usr/local/bin/wg-forge-tracker
 
     # Update and rebuild web dashboard if it was previously set up
     if [ -f /etc/wg-forge/web.conf ]; then
@@ -761,9 +758,13 @@ cmd_update() {
         echo "✓ Web dashboard restarted"
     fi
 
+    # Replace the CLI binary last so bash doesn't read the new file mid-execution
     echo ""
+    echo "Updating CLI..."
+    curl -fsSL "$BASE_URL/wg-forge" -o /usr/local/bin/wg-forge
+    chmod 755 /usr/local/bin/wg-forge
+
     echo "✓ wg-forge updated successfully"
-    /usr/local/bin/wg-forge version
 }
 
 cmd_web() {
