@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.3.5"
+VERSION="0.3.6"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -742,15 +742,8 @@ cmd_update() {
         local EXTRACTED_DIR
         EXTRACTED_DIR=$(find "$REPO_TMP" -mindepth 1 -maxdepth 1 -type d | head -1)
         if [ -n "$EXTRACTED_DIR" ] && [ -d "$EXTRACTED_DIR/web" ]; then
-            # Preserve node_modules if present to avoid full reinstall
-            if [ -d /opt/wg-forge-web/node_modules ]; then
-                mv /opt/wg-forge-web/node_modules "$REPO_TMP/node_modules_bak"
-            fi
             rm -rf /opt/wg-forge-web
             mv "$EXTRACTED_DIR/web" /opt/wg-forge-web
-            if [ -d "$REPO_TMP/node_modules_bak" ]; then
-                mv "$REPO_TMP/node_modules_bak" /opt/wg-forge-web/node_modules
-            fi
             echo "✓ Web source updated"
         else
             echo "⚠ Web source not found in tarball — skipping web update"
@@ -760,6 +753,7 @@ cmd_update() {
         echo "Installing web dependencies..."
         cd /opt/wg-forge-web && npm install --silent
         echo "Building web dashboard..."
+        rm -rf build
         npm run build --silent
         echo "✓ Web dashboard built"
 
