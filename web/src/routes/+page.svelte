@@ -143,7 +143,6 @@
       </form>
     {/if}
 
-    <!-- Bulk action bar -->
     {#if anySelected}
       <form method="POST" action="?/bulk" use:enhance={() => ({ update }) => update().then(() => { selected = new Set(); })} class="flex items-center gap-3 mb-4 px-4 py-3 bg-surface border border-border rounded-xl">
         <span class="text-sm text-muted">{selected.size} selected</span>
