@@ -28,9 +28,22 @@ export const actions: Actions = {
     const act    = data.get('action') as string;
     const amount = (data.get('amount') as string)?.trim();
     try {
-      if (act === 'extend')     runForge(`extend ${name} ${amount}`);
+      if (act === 'extend')          runForge(`extend ${name} ${amount}`);
       else if (act === 'regenerate') runForge(`regenerate ${name}`);
       else                           runForge(`${act} ${name}`);
+    } catch (e) {
+      return fail(500, { error: (e as Error).message });
+    }
+    throw redirect(303, '/');
+  },
+
+  bulk: async ({ request }) => {
+    const data  = await request.formData();
+    const act   = data.get('action') as string;
+    const names = data.getAll('name') as string[];
+    if (!names.length) return fail(400, { error: 'No clients selected' });
+    try {
+      for (const name of names) runForge(`${act} ${name}`);
     } catch (e) {
       return fail(500, { error: (e as Error).message });
     }
