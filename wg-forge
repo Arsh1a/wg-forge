@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.4.0"
+VERSION="0.4.2"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 if [ "$1" != "setup" ]; then
@@ -97,9 +97,9 @@ install_wg_deps() {
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq && apt-get install -y wireguard-tools perl bc curl
     elif command -v dnf >/dev/null 2>&1; then
-        dnf install -y wireguard-tools perl bc curl
+        dnf install -y wireguard-tools perl bc curl iptables-nft
     elif command -v yum >/dev/null 2>&1; then
-        yum install -y wireguard-tools perl bc curl
+        yum install -y wireguard-tools perl bc curl iptables-nft
     elif command -v pacman >/dev/null 2>&1; then
         pacman -Sy --noconfirm wireguard-tools perl bc curl
     else
