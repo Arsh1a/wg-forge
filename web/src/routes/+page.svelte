@@ -13,11 +13,27 @@
   let configText   = $state('');
   let qrDataUrl    = $state('');
   let shareLoading = $state(false);
-  let copied          = $state(false);
-  let regenerating    = $state(false);
-  let regenConfirm    = $state(false);
+  let copied       = $state(false);
+  let regenerating = $state(false);
+  let regenConfirm = $state(false);
 
-  const TABLE_HEADERS = ['Name', 'IP', 'Status', 'Session', 'Limit', 'Lifetime', 'Last seen', 'Actions'];
+  let selected = $state<Set<string>>(new Set());
+
+  const allNames    = $derived(data.clients.map((c: { name: string }) => c.name));
+  const allSelected = $derived(allNames.length > 0 && allNames.every((n: string) => selected.has(n)));
+  const anySelected = $derived(selected.size > 0);
+
+  function toggleAll() {
+    if (allSelected) selected = new Set();
+    else             selected = new Set(allNames);
+  }
+
+  function toggleOne(name: string) {
+    const s = new Set(selected);
+    if (s.has(name)) s.delete(name);
+    else             s.add(name);
+    selected = s;
+  }
 
   async function openShare(name: string) {
     shareClient  = name;
@@ -28,8 +44,8 @@
     try {
       const res = await fetch(`/api/config/${encodeURIComponent(name)}`);
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      configText = data.config;
+      const d = await res.json();
+      configText = d.config;
       qrDataUrl  = await QRCode.toDataURL(configText, { width: 256, margin: 2 });
     } finally {
       shareLoading = false;
@@ -52,7 +68,6 @@
       fd.set('name', shareClient);
       fd.set('action', 'regenerate');
       await fetch('/?/action', { method: 'POST', body: fd });
-      // reload the config after regeneration
       await openShare(shareClient);
     } finally {
       regenerating = false;
@@ -63,7 +78,6 @@
     try {
       await navigator.clipboard.writeText(configText);
     } catch {
-      // fallback for non-HTTPS
       const ta = document.createElement('textarea');
       ta.value = configText;
       ta.style.position = 'fixed';
@@ -88,7 +102,7 @@
   }
 </script>
 
-<div class="min-h-screen bg-bg text-white ">
+<div class="min-h-screen bg-bg text-white">
 
   <header class="bg-surface border-b border-border px-8 py-4 flex items-center justify-between">
     <span class="font-bold text-lg">wg-forge</span>
@@ -129,18 +143,51 @@
       </form>
     {/if}
 
+    {#if anySelected}
+      <form method="POST" action="?/bulk" use:enhance={() => ({ update }) => update().then(() => { selected = new Set(); })} class="flex items-center gap-3 mb-4 px-4 py-3 bg-surface border border-border rounded-xl">
+        <span class="text-sm text-muted">{selected.size} selected</span>
+        <div class="flex gap-2 ml-auto">
+          {#each [...selected] as name}
+            <input type="hidden" name="name" value={name} />
+          {/each}
+          <Button name="action" value="enable" variant="success" type="submit">Enable all</Button>
+          <Button name="action" value="disable" variant="danger" type="submit">Disable all</Button>
+          <Button
+            name="action" value="remove" variant="danger" type="submit"
+            onclick={(e) => { if (!confirm(`Remove ${selected.size} clients?`)) e.preventDefault(); }}
+          >Remove all</Button>
+        </div>
+      </form>
+    {/if}
+
     <div class="border border-border rounded-xl overflow-hidden">
       <table class="w-full text-sm">
         <thead>
           <tr class="bg-surface border-b border-border">
-            {#each TABLE_HEADERS as h}
+            <th class="px-4 py-3 w-8">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onchange={toggleAll}
+                class="accent-accent cursor-pointer"
+              />
+            </th>
+            {#each ['Name', 'IP', 'Status', 'Session', 'Limit', 'Lifetime', 'Last seen', 'Actions'] as h}
               <th class="text-left text-xs text-muted uppercase tracking-wider px-4 py-3 font-medium">{h}</th>
             {/each}
           </tr>
         </thead>
         <tbody>
           {#each data.clients as c (c.name)}
-            <tr class="border-b border-border hover:bg-surface transition-colors">
+            <tr class="border-b border-border hover:bg-surface transition-colors" class:bg-surface={selected.has(c.name)}>
+              <td class="px-4 py-3">
+                <input
+                  type="checkbox"
+                  checked={selected.has(c.name)}
+                  onchange={() => toggleOne(c.name)}
+                  class="accent-accent cursor-pointer"
+                />
+              </td>
               <td class="px-4 py-3 font-semibold">{c.name}</td>
               <td class="px-4 py-3 text-gray-400">{c.ip}</td>
               <td class="px-4 py-3">
@@ -195,7 +242,7 @@
 
           {#if data.clients.length === 0}
             <tr>
-              <td colspan="8" class="text-center text-muted py-16">No clients yet. Add one above.</td>
+              <td colspan="9" class="text-center text-muted py-16">No clients yet. Add one above.</td>
             </tr>
           {/if}
         </tbody>
@@ -205,6 +252,7 @@
   </main>
 </div>
 
+<!-- Share Modal -->
 {#if shareClient !== null}
   <!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
   <div
