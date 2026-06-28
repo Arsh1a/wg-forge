@@ -88,6 +88,28 @@ rm -rf /etc/wireguard
 
 To also remove WireGuard itself: `apt remove --purge wireguard wireguard-tools` (or `dnf`/`pacman` equivalent).
 
+## Development
+
+### Tests
+
+The project has two test suites, both run on every push and pull request via [GitHub Actions](.github/workflows/ci.yml).
+
+**CLI (bash)** — unit tests for the helper functions in `wg-forge`, written with [bats](https://github.com/bats-core/bats-core):
+
+```bash
+# Debian/Ubuntu: sudo apt-get install bats bc
+bats test/
+```
+
+**Web dashboard (TypeScript)** — unit tests for the session and WireGuard data layers, written with [Vitest](https://vitest.dev/):
+
+```bash
+cd web
+npm install
+npm test          # run once
+npm run test:watch
+```
+
 ## License
 
 MIT

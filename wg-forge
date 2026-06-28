@@ -7,14 +7,6 @@
 VERSION="0.4.2"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
-if [ "$1" != "setup" ]; then
-    if [ ! -f "$CONFIG_FILE" ]; then
-        echo "✗ Config not found. Run: wg-forge setup"
-        exit 1
-    fi
-    source "$CONFIG_FILE"
-fi
-
 # Helpers
 
 bytes_to_human() {
@@ -853,23 +845,35 @@ EOF
 }
 
 # Dispatch
+# Guarded so the script can be sourced (e.g. by the bats test suite) to load the
+# helper functions without loading config or running a command.
 
-case "$1" in
-    setup)       cmd_setup                 ;;
-    add)         cmd_add         "$2" "$3" ;;
-    remove)      cmd_remove      "$2"      ;;
-    show)        cmd_show        "$2"      ;;
-    list)        cmd_list                  ;;
-    disable)     cmd_disable     "$2"      ;;
-    enable)      cmd_enable      "$2"      ;;
-    extend)      cmd_extend      "$2" "$3" ;;
-    setlimit)    cmd_setlimit    "$2" "$3" ;;
-    regenerate)  cmd_regenerate  "$2"      ;;
-    checklimits) cmd_checklimits           ;;
-    total)       cmd_total                 ;;
-    version|--version|-v) echo "wg-forge $VERSION" ;;
-    update)      cmd_update      "$2"      ;;
-    web)         cmd_web                  ;;
-    help|--help|-h|"") cmd_help           ;;
-    *) echo "Unknown command: $1  (run 'wg-forge help')" && exit 1 ;;
-esac
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    if [ "$1" != "setup" ]; then
+        if [ ! -f "$CONFIG_FILE" ]; then
+            echo "✗ Config not found. Run: wg-forge setup"
+            exit 1
+        fi
+        source "$CONFIG_FILE"
+    fi
+
+    case "$1" in
+        setup)       cmd_setup                 ;;
+        add)         cmd_add         "$2" "$3" ;;
+        remove)      cmd_remove      "$2"      ;;
+        show)        cmd_show        "$2"      ;;
+        list)        cmd_list                  ;;
+        disable)     cmd_disable     "$2"      ;;
+        enable)      cmd_enable      "$2"      ;;
+        extend)      cmd_extend      "$2" "$3" ;;
+        setlimit)    cmd_setlimit    "$2" "$3" ;;
+        regenerate)  cmd_regenerate  "$2"      ;;
+        checklimits) cmd_checklimits           ;;
+        total)       cmd_total                 ;;
+        version|--version|-v) echo "wg-forge $VERSION" ;;
+        update)      cmd_update      "$2"      ;;
+        web)         cmd_web                  ;;
+        help|--help|-h|"") cmd_help           ;;
+        *) echo "Unknown command: $1  (run 'wg-forge help')" && exit 1 ;;
+    esac
+fi
