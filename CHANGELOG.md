@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-06-30
+
+### Changed
+
+- Redesigned the web dashboard. A refreshed dark theme built around WireGuard's crimson, with a server status bar showing live aggregate metrics (clients, active, session, and lifetime traffic), per-client usage progress bars, client search/filter, and monospaced technical columns (IP, usage, lifetime, expiry, last seen). Add Client, Extend, Set expiry, and Share are now modal dialogs and bulk selection uses a floating action bar, so opening a control no longer shifts the table. No behavioural or CLI changes — same actions, same data.
+
 ## [0.4.5] - 2026-06-30
 
 ### Added

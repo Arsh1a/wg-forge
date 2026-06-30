@@ -13,6 +13,8 @@ sudo wg-forge setup
 
 ## Web Dashboard
 
+<p align="center"><img src="assets/dashboard.png" width="800" alt="wg-forge dashboard"></p>
+
 The web dashboard lets you manage clients from a browser. It is set up as part of `wg-forge setup`.
 
 - Add, remove, disable, and enable clients

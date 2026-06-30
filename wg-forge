@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.4.5"
+VERSION="0.4.6"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 # Helpers
