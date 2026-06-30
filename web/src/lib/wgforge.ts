@@ -26,7 +26,9 @@ export interface Client {
   status: string;
   limitBytes: number;
   limitHuman: string;
+  sessionBytes: number;
   sessionHuman: string;
+  lifetimeBytes: number;
   lifetimeHuman: string;
   usagePct: string | null;
   lastSeen: string;
@@ -156,7 +158,9 @@ export function getClients(): Client[] {
       status:        lim.status ?? 'active',
       limitBytes:    lim.limitBytes ?? 0,
       limitHuman:    lim.limitBytes ? bytesToHuman(lim.limitBytes) : 'unlimited',
+      sessionBytes:  session,
       sessionHuman:  bytesToHuman(session),
+      lifetimeBytes: lifetime,
       lifetimeHuman: bytesToHuman(lifetime),
       usagePct:      lim.limitBytes
         ? Math.min(100, (session / lim.limitBytes) * 100).toFixed(1)

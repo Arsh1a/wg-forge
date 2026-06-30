@@ -1,14 +1,65 @@
 @import "tailwindcss";
 
-body {
-  color: white;
+@theme {
+  --color-bg:            #0a0a0b;
+  --color-surface:       #141417;
+  --color-surface-hover: #1b1b1f;
+  --color-elevated:      #18181c;
+  --color-border:        #26262b;
+  --color-border-hover:  #34343a;
+  --color-muted:         #6f6f78;
+  --color-dim:           #a1a1aa;
+  /* WireGuard's brand crimson — one accent, used with discipline. */
+  --color-accent:        #88171a;
+  --color-accent-hover:  #a01e22;
+  --color-accent-soft:   #c2565a;
+  --color-online:        #5a9c6e;
+
+  --font-sans: 'Inter var', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
 }
 
-@theme {
-  --color-bg:      #0f0f0f;
-  --color-surface: #171717;
-  --color-border:  #252525;
-  --color-muted:   #555555;
-  --color-accent:  #88171a;
-  --color-accent-hover: #a01e22;
+html {
+  background: var(--color-bg);
 }
+
+body {
+  color: white;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+  background-color: var(--color-bg);
+  background-image:
+    radial-gradient(1100px 540px at 50% -18%, rgba(136, 23, 26, 0.10), transparent 60%),
+    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+  background-size: auto, 46px 46px, 46px 46px;
+  background-attachment: fixed;
+}
+
+/* tabular figures keep numeric columns aligned */
+.tnum { font-variant-numeric: tabular-nums; }
+
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: #2c2c33;
+  border-radius: 8px;
+  border: 3px solid var(--color-bg);
+}
+::-webkit-scrollbar-thumb:hover { background: #3c3c45; }
+
+/* subtle entrance for modals/panels */
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+.animate-pop { animation: pop-in 0.16s cubic-bezier(0.16, 1, 0.3, 1); }
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.animate-fade { animation: fade-in 0.15s ease-out; }

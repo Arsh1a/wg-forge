@@ -19,12 +19,15 @@
     class?:        string;
   } = $props();
 
-  const inputCls = 'bg-bg border border-border rounded-lg px-3 py-2 text-sm text-white  focus:outline-none focus:border-[#88171a] w-full';
+  const inputCls =
+    'w-full bg-bg border border-border rounded-lg px-3 py-2 text-sm text-white ' +
+    'placeholder:text-muted/70 transition-colors ' +
+    'focus:outline-none focus:border-accent/60 focus:ring-2 focus:ring-accent/20';
 </script>
 
 {#if label}
   <div>
-    <label for={id} class="block text-xs text-gray-500 mb-1 ">{label}</label>
+    <label for={id} class="block text-xs font-medium text-dim mb-1.5">{label}</label>
     <input {id} {name} {type} {placeholder} {required} {autocomplete} class="{inputCls} {cls}" />
   </div>
 {:else}
