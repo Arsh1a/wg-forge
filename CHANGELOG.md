@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-06-30
+
+### Added
+
+- Split tunneling / custom `AllowedIPs`. `wg-forge setup` now prompts for the client routes (default `0.0.0.0/0`, a full tunnel), and a new `wg-forge setroutes <AllowedIPs>` command changes it afterwards — narrow it to specific subnets (e.g. `10.0.0.0/8`) so only that traffic goes through the VPN, or pass comma-separated routes (e.g. `10.0.0.0/8, 192.168.1.0/24`). The web dashboard's config download/QR uses the same setting. Configs created before this release fall back to `0.0.0.0/0`.
+
 ## [0.4.3] - 2026-06-30
 
 ### Added

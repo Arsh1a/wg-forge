@@ -134,3 +134,30 @@ EOF
   [[ "$output" == *"Address = 10.99.0.3/32"* ]]
   [[ "$output" != *"/32/32"* ]]
 }
+
+# ── client_config (AllowedIPs / split tunnel is configurable) ───
+
+@test "client_config: defaults to full tunnel when WG_ALLOWED_IPS is unset" {
+  unset WG_ALLOWED_IPS
+  VPS_PUBKEY="SRVPUB"
+  VPS_ENDPOINT="1.2.3.4:51820"
+  run client_config "CLIENTPRIV" "10.99.0.3"
+  [[ "$output" == *"AllowedIPs = 0.0.0.0/0"* ]]
+}
+
+@test "client_config: uses WG_ALLOWED_IPS for a split tunnel when set" {
+  WG_ALLOWED_IPS="10.0.0.0/8"
+  VPS_PUBKEY="SRVPUB"
+  VPS_ENDPOINT="1.2.3.4:51820"
+  run client_config "CLIENTPRIV" "10.99.0.3"
+  [[ "$output" == *"AllowedIPs = 10.0.0.0/8"* ]]
+  [[ "$output" != *"AllowedIPs = 0.0.0.0/0"* ]]
+}
+
+@test "client_config: accepts multiple comma-separated routes" {
+  WG_ALLOWED_IPS="10.0.0.0/8, 192.168.1.0/24"
+  VPS_PUBKEY="SRVPUB"
+  VPS_ENDPOINT="1.2.3.4:51820"
+  run client_config "CLIENTPRIV" "10.99.0.3"
+  [[ "$output" == *"AllowedIPs = 10.0.0.0/8, 192.168.1.0/24"* ]]
+}

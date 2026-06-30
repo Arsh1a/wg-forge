@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.4.3"
+VERSION="0.4.4"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 # Helpers
@@ -85,6 +85,8 @@ print_qr() {
 
 # Render a client .conf. IP may be given with or without a /32 suffix.
 # DNS falls back to 8.8.8.8 for configs created before WG_DNS existed.
+# AllowedIPs falls back to 0.0.0.0/0 (full tunnel) for configs created before
+# WG_ALLOWED_IPS existed; set it to specific subnets for a split tunnel.
 client_config() {
     local PRIV=$1 IP=$2
     cat <<EOF
@@ -96,7 +98,7 @@ DNS = ${WG_DNS:-8.8.8.8}
 [Peer]
 PublicKey = $VPS_PUBKEY
 Endpoint = $VPS_ENDPOINT
-AllowedIPs = 0.0.0.0/0
+AllowedIPs = ${WG_ALLOWED_IPS:-0.0.0.0/0}
 PersistentKeepalive = 25
 EOF
 }
@@ -157,6 +159,11 @@ cmd_setup() {
     # DNS pushed to clients (comma-separate for multiple, e.g. 1.1.1.1, 1.0.0.1)
     read -rp "Client DNS server(s)        [8.8.8.8]: " WG_DNS; WG_DNS=${WG_DNS:-8.8.8.8}
 
+    # Client AllowedIPs: 0.0.0.0/0 routes all traffic through the VPN (full
+    # tunnel). Narrow it to specific subnets for a split tunnel, e.g. 10.0.0.0/8.
+    read -rp "Client routes (AllowedIPs)  [0.0.0.0/0]: " WG_ALLOWED_IPS
+    WG_ALLOWED_IPS=${WG_ALLOWED_IPS:-0.0.0.0/0}
+
     # Generate server keypair
     local SERVER_PRIV SERVER_PUB
     SERVER_PRIV=$(wg genkey)
@@ -193,6 +200,7 @@ VPS_PUBKEY="$SERVER_PUB"
 VPS_ENDPOINT="$VPS_IP:$WG_PORT"
 WG_SUBNET="$SUBNET"
 WG_DNS="$WG_DNS"
+WG_ALLOWED_IPS="$WG_ALLOWED_IPS"
 WG_CONF="$WG_CONF"
 CLIENTS_FILE="/etc/wireguard/clients.conf"
 LIMITS_FILE="/etc/wireguard/limits.conf"
@@ -631,6 +639,24 @@ cmd_setdns() {
     echo "  (wg-forge show <name>) or regenerate it."
 }
 
+# Set the AllowedIPs pushed to clients. This controls split tunneling:
+#   0.0.0.0/0          full tunnel (all client traffic via the VPN)
+#   10.0.0.0/8         split tunnel (only that subnet via the VPN)
+# Multiple routes can be comma-separated, e.g. "10.0.0.0/8, 192.168.1.0/24".
+cmd_setroutes() {
+    local ROUTES=$1
+    [ -z "$ROUTES" ] && \
+        echo "Usage: wg-forge setroutes <AllowedIPs e.g. 0.0.0.0/0 or '10.0.0.0/8, 192.168.1.0/24'>" && exit 1
+    if grep -q "^WG_ALLOWED_IPS=" "$CONFIG_FILE"; then
+        sed -i "s|^WG_ALLOWED_IPS=.*|WG_ALLOWED_IPS=\"$ROUTES\"|" "$CONFIG_FILE"
+    else
+        echo "WG_ALLOWED_IPS=\"$ROUTES\"" >> "$CONFIG_FILE"
+    fi
+    echo "✓ Client routes (AllowedIPs) set to $ROUTES"
+    echo "  Existing clients keep their old routes until you re-share their config"
+    echo "  (wg-forge show <name>) or regenerate it."
+}
+
 cmd_regenerate() {
     local NAME=$1
     [ -z "$NAME" ] && echo "Usage: wg-forge regenerate <n>" && exit 1
@@ -834,6 +860,7 @@ cmd_help() {
 
   ── Server ──────────────────────────────────────
     setdns   <dns>                 Set DNS pushed to clients (e.g. 1.1.1.1)
+    setroutes <AllowedIPs>         Set client routes / split tunnel (e.g. 0.0.0.0/0)
 
   ── Stats ───────────────────────────────────────
     total                          Lifetime bandwidth per user
@@ -871,6 +898,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         extend)      cmd_extend      "$2" "$3" ;;
         setlimit)    cmd_setlimit    "$2" "$3" ;;
         setdns)      cmd_setdns      "$2"      ;;
+        setroutes)   cmd_setroutes   "$2"      ;;
         regenerate)  cmd_regenerate  "$2"      ;;
         checklimits) cmd_checklimits           ;;
         total)       cmd_total                 ;;

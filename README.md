@@ -41,10 +41,23 @@ wg-forge enable <n>            Restore access + reset session
 wg-forge extend <n> <amount>   Add bandwidth  (e.g. extend john 5GB)
 wg-forge setlimit <n> <limit>  Change bandwidth limit
 wg-forge setdns <dns>          Set DNS pushed to clients (e.g. 1.1.1.1)
+wg-forge setroutes <ips>       Set client routes / split tunnel (e.g. 0.0.0.0/0)
 wg-forge regenerate <n>        Issue new keypair
 wg-forge total                 Lifetime usage per user
 wg-forge update [version]      Update to latest release
 ```
+
+## Split tunneling
+
+By default every client routes **all** its traffic through the VPN (`AllowedIPs = 0.0.0.0/0`, a full tunnel). To send only specific subnets through the VPN and leave the rest on the client's normal connection (a split tunnel), set the client routes:
+
+```bash
+wg-forge setroutes 10.0.0.0/8                 # only the 10.x range via VPN
+wg-forge setroutes '10.0.0.0/8, 192.168.1.0/24'  # multiple subnets
+wg-forge setroutes 0.0.0.0/0                  # back to a full tunnel
+```
+
+This is also asked during `wg-forge setup`. Existing clients keep their old routes until you re-share their config (`wg-forge show <name>`) or regenerate it.
 
 ## Requirements
 

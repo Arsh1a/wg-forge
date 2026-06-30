@@ -66,8 +66,9 @@ export function getConfig(): Record<string, string> {
   return parseConf(FORGE_CONF);
 }
 
-// Render a client .conf from the server config. DNS falls back to 8.8.8.8 for
-// installs created before WG_DNS existed.
+// Render a client .conf from the server config. DNS falls back to 8.8.8.8 and
+// AllowedIPs to 0.0.0.0/0 (full tunnel) for installs created before WG_DNS /
+// WG_ALLOWED_IPS existed.
 export function buildClientConfig(
   cfg: Record<string, string>,
   privateKey: string,
@@ -82,7 +83,7 @@ export function buildClientConfig(
     '[Peer]',
     `PublicKey = ${cfg['VPS_PUBKEY'] ?? ''}`,
     `Endpoint = ${cfg['VPS_ENDPOINT'] ?? ''}`,
-    'AllowedIPs = 0.0.0.0/0',
+    `AllowedIPs = ${cfg['WG_ALLOWED_IPS'] || '0.0.0.0/0'}`,
     'PersistentKeepalive = 25'
   ].join('\n');
 }

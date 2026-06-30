@@ -216,4 +216,29 @@ describe('buildClientConfig', () => {
     expect(conf).toContain('AllowedIPs = 0.0.0.0/0');
     expect(conf).toContain('PersistentKeepalive = 25');
   });
+
+  it('uses WG_ALLOWED_IPS for a split tunnel when set', () => {
+    const conf = buildClientConfig({ ...cfg, WG_ALLOWED_IPS: '10.0.0.0/8' }, 'PRIV', '10.99.0.3/32');
+    expect(conf).toContain('AllowedIPs = 10.0.0.0/8');
+    expect(conf).not.toContain('AllowedIPs = 0.0.0.0/0');
+  });
+
+  it('falls back to full tunnel when WG_ALLOWED_IPS is absent', () => {
+    const conf = buildClientConfig(cfg, 'PRIV', '10.99.0.3/32');
+    expect(conf).toContain('AllowedIPs = 0.0.0.0/0');
+  });
+
+  it('falls back to full tunnel when WG_ALLOWED_IPS is empty', () => {
+    const conf = buildClientConfig({ ...cfg, WG_ALLOWED_IPS: '' }, 'PRIV', '10.99.0.3/32');
+    expect(conf).toContain('AllowedIPs = 0.0.0.0/0');
+  });
+
+  it('preserves comma-separated routes', () => {
+    const conf = buildClientConfig(
+      { ...cfg, WG_ALLOWED_IPS: '10.0.0.0/8, 192.168.1.0/24' },
+      'PRIV',
+      '10.99.0.3/32'
+    );
+    expect(conf).toContain('AllowedIPs = 10.0.0.0/8, 192.168.1.0/24');
+  });
 });
