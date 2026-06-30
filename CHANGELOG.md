@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-06-30
+
+### Added
+
+- Time-based client expiry. Give a client an expiry when creating it (`wg-forge add john 10GB 30d`) or any time afterwards (`wg-forge setexpiry john 7d`); clear it with `wg-forge setexpiry john never`. Durations accept `w`/`d`/`h`/`m` units (e.g. `2w`, `30d`, `12h`, `90m`). Expired clients are automatically disabled on the existing `wg-forge-checklimits.timer` schedule — the peer is removed and commented out in `wg0.conf` so it stays revoked across reboots, even for clients that never connected. Re-enabling a client preserves its expiry (with a warning if it has already passed). Time remaining is shown in `wg-forge list`, `wg-forge show`, and the web dashboard, where clients can also be created with an expiry and have it changed via a per-client "Expiry" control. Stored as an optional 5th field in `limits.conf`; existing clients default to no expiry.
+
 ## [0.4.4] - 2026-06-30
 
 ### Added

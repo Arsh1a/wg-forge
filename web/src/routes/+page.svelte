@@ -9,6 +9,7 @@
 
   let showAdd      = $state(false);
   let extendTarget = $state<string | null>(null);
+  let expiryTarget = $state<string | null>(null);
   let shareClient  = $state<string | null>(null);
   let configText   = $state('');
   let qrDataUrl    = $state('');
@@ -138,6 +139,7 @@
       >
         <Input name="name" placeholder="Name (e.g. john)" required class="w-52" />
         <Input name="limit" placeholder="Limit e.g. 10GB (optional)" class="w-56" />
+        <Input name="expiry" placeholder="Expiry e.g. 30d (optional)" class="w-52" />
         <Button type="submit" variant="primary">Create</Button>
         <Button onclick={() => showAdd = false}>Cancel</Button>
       </form>
@@ -172,7 +174,7 @@
                 class="accent-accent cursor-pointer"
               />
             </th>
-            {#each ['Name', 'IP', 'Status', 'Session', 'Limit', 'Lifetime', 'Last seen', 'Actions'] as h}
+            {#each ['Name', 'IP', 'Status', 'Session', 'Limit', 'Lifetime', 'Last seen', 'Expires', 'Actions'] as h}
               <th class="text-left text-xs text-muted uppercase tracking-wider px-4 py-3 font-medium">{h}</th>
             {/each}
           </tr>
@@ -202,6 +204,7 @@
               <td class="px-4 py-3 text-gray-300">{c.limitHuman}</td>
               <td class="px-4 py-3 text-gray-300">{c.lifetimeHuman}</td>
               <td class="px-4 py-3 text-muted">{c.lastSeen}</td>
+              <td class="px-4 py-3 {c.expiresHuman === 'expired' ? 'text-red-400' : 'text-muted'}">{c.expiresHuman}</td>
               <td class="px-4 py-3">
                 <form method="POST" action="?/action" use:enhance class="flex gap-2 flex-wrap">
                   <input type="hidden" name="name" value={c.name} />
@@ -214,6 +217,10 @@
 
                   <Button onclick={() => extendTarget = extendTarget === c.name ? null : c.name}>
                     Extend
+                  </Button>
+
+                  <Button onclick={() => expiryTarget = expiryTarget === c.name ? null : c.name}>
+                    Expiry
                   </Button>
 
                   <Button onclick={() => openShare(c.name)}>
@@ -236,13 +243,22 @@
                     <Button type="submit" variant="primary">Add</Button>
                   </form>
                 {/if}
+
+                {#if expiryTarget === c.name}
+                  <form method="POST" action="?/action" use:enhance class="flex gap-2 mt-2 items-center">
+                    <input type="hidden" name="name" value={c.name} />
+                    <input type="hidden" name="action" value="setexpiry" />
+                    <Input name="amount" placeholder="e.g. 30d or never" required class="w-36" />
+                    <Button type="submit" variant="primary">Set</Button>
+                  </form>
+                {/if}
               </td>
             </tr>
           {/each}
 
           {#if data.clients.length === 0}
             <tr>
-              <td colspan="9" class="text-center text-muted py-16">No clients yet. Add one above.</td>
+              <td colspan="10" class="text-center text-muted py-16">No clients yet. Add one above.</td>
             </tr>
           {/if}
         </tbody>

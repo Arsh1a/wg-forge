@@ -32,7 +32,7 @@ wg-forge web
 wg-forge setup                 Install WireGuard + configure server (run once)
 wg-forge web                   Show web dashboard URL and status
 
-wg-forge add <n> [limit]       Create client  (e.g. add john 10GB)
+wg-forge add <n> [limit] [expiry]  Create client  (e.g. add john 10GB 30d)
 wg-forge remove <n>            Remove client
 wg-forge show <n>              Show config + QR code
 wg-forge list                  List all clients
@@ -40,12 +40,28 @@ wg-forge disable <n>           Revoke access
 wg-forge enable <n>            Restore access + reset session
 wg-forge extend <n> <amount>   Add bandwidth  (e.g. extend john 5GB)
 wg-forge setlimit <n> <limit>  Change bandwidth limit
+wg-forge setexpiry <n> <when>  Set/clear time expiry (e.g. 30d, or 'never')
 wg-forge setdns <dns>          Set DNS pushed to clients (e.g. 1.1.1.1)
 wg-forge setroutes <ips>       Set client routes / split tunnel (e.g. 0.0.0.0/0)
 wg-forge regenerate <n>        Issue new keypair
 wg-forge total                 Lifetime usage per user
 wg-forge update [version]      Update to latest release
 ```
+
+## Time-based expiry
+
+Clients can be given an expiry time, after which their access is automatically revoked. Set it when creating a client or any time afterwards:
+
+```bash
+wg-forge add john 10GB 30d        # 10GB cap and expires in 30 days
+wg-forge add guest 0 24h          # no bandwidth cap, expires in 24 hours
+wg-forge setexpiry john 7d        # (re)set expiry to 7 days from now
+wg-forge setexpiry john never     # clear the expiry
+```
+
+Durations are `w` (weeks), `d` (days), `h` (hours), or `m` (minutes) — e.g. `2w`, `30d`, `12h`, `90m`. A bare number is seconds.
+
+Enforcement runs on the same schedule as the bandwidth check (`wg-forge-checklimits.timer`): once a client is past its expiry it is disabled (peer removed and commented out in `wg0.conf` so it stays revoked across reboots). `wg-forge enable <name>` keeps the existing expiry — if it has already passed, push it out with `wg-forge setexpiry <name> <duration>` (or clear it with `never`), otherwise the next limit check will re-disable the client. Expiry time left is shown in `wg-forge list`, `wg-forge show`, and the web dashboard.
 
 ## Split tunneling
 

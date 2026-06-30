@@ -16,6 +16,7 @@ interface LimitEntry {
   limitBytes: number;
   sessionBytes: number;
   status: string;
+  expiryEpoch: number;
 }
 
 export interface Client {
@@ -29,6 +30,8 @@ export interface Client {
   lifetimeHuman: string;
   usagePct: string | null;
   lastSeen: string;
+  expiryEpoch: number;
+  expiresHuman: string;
 }
 
 function readLines(path: string): string[] {
@@ -52,6 +55,16 @@ function bytesToHuman(b: number): string {
   if (b >= 1048576)    return (b / 1048576).toFixed(2) + ' MB';
   if (b >= 1024)       return (b / 1024).toFixed(2) + ' KB';
   return b + ' B';
+}
+
+// Human-readable time left until an expiry epoch (seconds). 0 = no expiry.
+function expiryToHuman(epoch: number): string {
+  if (!epoch) return 'never';
+  const d = epoch - Math.floor(Date.now() / 1000);
+  if (d <= 0)       return 'expired';
+  if (d < 3600)     return `${Math.floor(d / 60)}m left`;
+  if (d < 86400)    return `${Math.floor(d / 3600)}h left`;
+  return `${Math.floor(d / 86400)}d left`;
 }
 
 function getWgDump(iface: string): string {
@@ -106,11 +119,12 @@ export function getClients(): Client[] {
 
   const limits: Record<string, LimitEntry> = {};
   readLines(LIMITS_FILE).forEach((l) => {
-    const [name, limitBytes, sessionBytes, status] = l.split(':');
+    const [name, limitBytes, sessionBytes, status, expiry] = l.split(':');
     limits[name] = {
       limitBytes: Number(limitBytes),
       sessionBytes: Number(sessionBytes),
-      status
+      status,
+      expiryEpoch: Number(expiry) || 0
     };
   });
 
@@ -147,7 +161,9 @@ export function getClients(): Client[] {
       usagePct:      lim.limitBytes
         ? Math.min(100, (session / lim.limitBytes) * 100).toFixed(1)
         : null,
-      lastSeen
+      lastSeen,
+      expiryEpoch:   lim.expiryEpoch ?? 0,
+      expiresHuman:  expiryToHuman(lim.expiryEpoch ?? 0)
     };
   });
 }

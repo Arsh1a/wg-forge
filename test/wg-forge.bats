@@ -75,6 +75,48 @@ setup() {
   [ "$(handshake_age 996400)" = "1h ago" ]    # 3600 seconds
 }
 
+# ── duration_to_seconds ─────────────────────────────────────────
+
+@test "duration_to_seconds: weeks / days / hours / minutes" {
+  [ "$(duration_to_seconds 2w)" = "1209600" ]   # 2 * 604800
+  [ "$(duration_to_seconds 30d)" = "2592000" ]   # 30 * 86400
+  [ "$(duration_to_seconds 12h)" = "43200" ]     # 12 * 3600
+  [ "$(duration_to_seconds 90m)" = "5400" ]      # 90 * 60
+}
+
+@test "duration_to_seconds: case-insensitive units" {
+  [ "$(duration_to_seconds 30D)" = "2592000" ]
+}
+
+@test "duration_to_seconds: bare number treated as seconds" {
+  [ "$(duration_to_seconds 3600)" = "3600" ]
+}
+
+@test "duration_to_seconds: empty / non-numeric yields 0" {
+  [ "$(duration_to_seconds '')" = "0" ]
+  [ "$(duration_to_seconds never)" = "0" ]
+}
+
+# ── expiry_remaining (date stubbed for determinism) ─────────────
+
+@test "expiry_remaining: 0 / empty means never" {
+  [ "$(expiry_remaining 0)" = "never" ]
+  [ "$(expiry_remaining '')" = "never" ]
+}
+
+@test "expiry_remaining: past timestamp is expired" {
+  date() { echo 1000000; }   # freeze "now"
+  [ "$(expiry_remaining 999999)" = "expired" ]   # 1s in the past
+  [ "$(expiry_remaining 1000000)" = "expired" ]  # exactly now
+}
+
+@test "expiry_remaining: minutes / hours / days buckets" {
+  date() { echo 1000000; }   # freeze "now"
+  [ "$(expiry_remaining 1000600)" = "10m left" ]    # +600s
+  [ "$(expiry_remaining 1003600)" = "1h left" ]     # +3600s
+  [ "$(expiry_remaining 1086400)" = "1d left" ]     # +86400s
+}
+
 # ── next_ip ─────────────────────────────────────────────────────
 
 @test "next_ip: first client when registry is empty" {

@@ -10,12 +10,16 @@ export const load: PageServerLoad = () => {
 
 export const actions: Actions = {
   add: async ({ request }) => {
-    const data  = await request.formData();
-    const name  = (data.get('name') as string)?.trim();
-    const limit = (data.get('limit') as string)?.trim();
+    const data   = await request.formData();
+    const name   = (data.get('name') as string)?.trim();
+    const limit  = (data.get('limit') as string)?.trim();
+    const expiry = (data.get('expiry') as string)?.trim();
     if (!name) return fail(400, { error: 'Name is required' });
+    // expiry is positional after limit in the CLI, so fill the limit slot with
+    // 0 (= no limit) when an expiry is given without a limit.
+    const limitArg = limit || (expiry ? '0' : '');
     try {
-      runForge(`add ${name}${limit ? ' ' + limit : ''}`);
+      runForge(`add ${name}${limitArg ? ' ' + limitArg : ''}${expiry ? ' ' + expiry : ''}`);
     } catch (e) {
       return fail(500, { error: (e as Error).message });
     }
@@ -29,6 +33,7 @@ export const actions: Actions = {
     const amount = (data.get('amount') as string)?.trim();
     try {
       if (act === 'extend')          runForge(`extend ${name} ${amount}`);
+      else if (act === 'setexpiry')  runForge(`setexpiry ${name} ${amount}`);
       else if (act === 'regenerate') runForge(`regenerate ${name}`);
       else                           runForge(`${act} ${name}`);
     } catch (e) {

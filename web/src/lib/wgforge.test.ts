@@ -158,6 +158,43 @@ describe('getClients', () => {
     });
   });
 
+  it('parses the optional expiry field and renders time remaining', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2025-01-01T00:00:00Z'));
+    const nowSec = Math.floor(Date.now() / 1000);
+
+    mockFiles({
+      [FORGE_CONF]: 'WG_INTERFACE="wg0"\n',
+      [CLIENTS_FILE]:
+        '# wg-forge data\n' +
+        'soon:PUBKEY_S:10.99.0.3/32\n' +    // expires in 2 days
+        'gone:PUBKEY_G:10.99.0.4/32\n' +    // already expired
+        'forever:PUBKEY_F:10.99.0.5/32\n',  // explicit 0 = never
+      [LIMITS_FILE]:
+        '# wg-forge data\n' +
+        `soon:0:0:active:${nowSec + 2 * 86400}\n` +
+        `gone:0:0:disabled:${nowSec - 100}\n` +
+        'forever:0:0:active:0\n',
+      [TOTAL_FILE]: '# wg-forge data\n'
+    });
+
+    const byName = Object.fromEntries(getClients().map((c) => [c.name, c]));
+    expect(byName.soon).toMatchObject({ expiresHuman: '2d left', expiryEpoch: nowSec + 2 * 86400 });
+    expect(byName.gone).toMatchObject({ expiresHuman: 'expired' });
+    expect(byName.forever).toMatchObject({ expiresHuman: 'never', expiryEpoch: 0 });
+  });
+
+  it('treats a legacy 4-field limits line as no expiry', () => {
+    mockFiles({
+      [FORGE_CONF]: 'WG_INTERFACE="wg0"\n',
+      [CLIENTS_FILE]: 'legacy:PUBKEY_L:10.99.0.7/32\n',
+      [LIMITS_FILE]: `legacy:${GB}:0:active\n`,
+      [TOTAL_FILE]: ''
+    });
+    const legacy = getClients()[0];
+    expect(legacy).toMatchObject({ expiresHuman: 'never', expiryEpoch: 0 });
+  });
+
   it('formats byte sizes across B/KB/MB/GB boundaries', () => {
     mockFiles({
       [FORGE_CONF]: 'WG_INTERFACE="wg0"\n',

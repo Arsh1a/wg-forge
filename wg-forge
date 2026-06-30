@@ -4,7 +4,7 @@
 #  https://github.com/Arsh1a/wg-forge
 # ─────────────────────────────────────────────
 
-VERSION="0.4.4"
+VERSION="0.4.5"
 CONFIG_FILE="/etc/wg-forge/config.conf"
 
 # Helpers
@@ -68,6 +68,34 @@ handshake_age() {
     if   [ $D -lt 60 ];   then echo "${D}s ago"
     elif [ $D -lt 3600 ]; then echo "$((D/60))m ago"
     else                       echo "$((D/3600))h ago"
+    fi
+}
+
+# Convert a duration like 30d / 12h / 90m / 2w into seconds. A bare number is
+# treated as seconds. Unknown/empty input yields 0.
+duration_to_seconds() {
+    local N U
+    N=$(echo "$1" | grep -oE '[0-9]+' | head -1)
+    U=$(echo "$1" | grep -oE '[A-Za-z]+' | tr '[:upper:]' '[:lower:]')
+    [ -z "$N" ] && echo 0 && return
+    case "$U" in
+        w) echo $((N * 604800)) ;;
+        d) echo $((N * 86400))  ;;
+        h) echo $((N * 3600))   ;;
+        m) echo $((N * 60))     ;;
+        *) echo "$N"            ;;
+    esac
+}
+
+# Human-readable time left until an expiry epoch. 0 / empty means no expiry.
+expiry_remaining() {
+    local EXP=$1
+    { [ -z "$EXP" ] || [ "$EXP" = "0" ]; } && echo "never" && return
+    local D=$(( EXP - $(date +%s) ))
+    if   [ "$D" -le 0 ];      then echo "expired"
+    elif [ "$D" -lt 3600 ];   then echo "$((D/60))m left"
+    elif [ "$D" -lt 86400 ];  then echo "$((D/3600))h left"
+    else                           echo "$((D/86400))d left"
     fi
 }
 
@@ -369,8 +397,8 @@ EOF
 }
 
 cmd_add() {
-    local NAME=$1 LIMIT=$2
-    [ -z "$NAME" ] && echo "Usage: wg-forge add <n> [limit e.g. 10GB]" && exit 1
+    local NAME=$1 LIMIT=$2 EXPIRY=$3
+    [ -z "$NAME" ] && echo "Usage: wg-forge add <n> [limit e.g. 10GB] [expiry e.g. 30d]" && exit 1
 
     if ! echo "$NAME" | grep -qE '^[a-zA-Z0-9._-]+$'; then
         echo "✗ Invalid name '$NAME' - only letters, digits, '.', '-', '_' allowed"
@@ -404,14 +432,19 @@ cmd_add() {
 
     local LIMIT_BYTES=0
     [ -n "$LIMIT" ] && LIMIT_BYTES=$(human_to_bytes "$LIMIT")
-    echo "$FULLNAME:$LIMIT_BYTES:0:active" >> "$LIMITS_FILE"
+
+    local EXPIRY_EPOCH=0
+    if [ -n "$EXPIRY" ] && [ "$EXPIRY" != "never" ] && [ "$EXPIRY" != "0" ]; then
+        EXPIRY_EPOCH=$(( $(date +%s) + $(duration_to_seconds "$EXPIRY") ))
+    fi
+
+    echo "$FULLNAME:$LIMIT_BYTES:0:active:$EXPIRY_EPOCH" >> "$LIMITS_FILE"
     grep -q "^$FULLNAME:" "$TOTAL_FILE" || echo "$FULLNAME:0" >> "$TOTAL_FILE"
 
-    if [ "$LIMIT_BYTES" -gt 0 ]; then
-        echo "✓ Client '$FULLNAME' created  [limit: $LIMIT]"
-    else
-        echo "✓ Client '$FULLNAME' created  [no limit]"
-    fi
+    local NOTE
+    [ "$LIMIT_BYTES" -gt 0 ] && NOTE="limit: $LIMIT" || NOTE="no limit"
+    [ "$EXPIRY_EPOCH" -gt 0 ] && NOTE="$NOTE, expires in $EXPIRY"
+    echo "✓ Client '$FULLNAME' created  [$NOTE]"
 
     echo ""
     local CLIENT_CONF
@@ -459,12 +492,13 @@ cmd_show() {
     LINE=$(grep "^$NAME:" "$CLIENTS_FILE")
     [ -z "$LINE" ] && echo "✗ Client '$NAME' not found" && exit 1
 
-    local PUB IP LIM_LINE LIMIT_BYTES STATUS LIFETIME
+    local PUB IP LIM_LINE LIMIT_BYTES STATUS EXPIRY LIFETIME
     PUB=$(echo "$LINE"             | cut -d: -f2)
     IP=$(echo "$LINE"              | cut -d: -f3)
     LIM_LINE=$(grep "^$NAME:" "$LIMITS_FILE")
     LIMIT_BYTES=$(echo "$LIM_LINE" | cut -d: -f2)
     STATUS=$(echo "$LIM_LINE"      | cut -d: -f4)
+    EXPIRY=$(echo "$LIM_LINE"      | cut -d: -f5)
     LIFETIME=$(grep "^$NAME:" "$TOTAL_FILE" | cut -d: -f2)
 
     echo "╔══════════════════════════════════════╗"
@@ -478,6 +512,7 @@ cmd_show() {
         printf "  %-18s %s\n" "Limit:"     "unlimited"
     fi
     printf "  %-18s %s\n" "Lifetime used:" "$(bytes_to_human "${LIFETIME:-0}")"
+    printf "  %-18s %s\n" "Expires:"        "$(expiry_remaining "${EXPIRY:-0}")"
     echo ""
 
     local INFO HS RX TX TOTAL
@@ -517,18 +552,19 @@ cmd_show() {
 cmd_list() {
     local COUNT
     COUNT=$(grep -vc "^#" "$CLIENTS_FILE" || true)
-    echo "╔══════════════════════════════════════════════════════════════════════════════════════╗"
-    printf "║  wg-forge Clients (%d total)%55s║\n" "$COUNT" ""
-    echo "╚══════════════════════════════════════════════════════════════════════════════════════╝"
-    printf "  %-22s %-13s %-10s %-10s %-12s %-12s %s\n" \
-        "NAME" "IP" "STATUS" "SESSION" "LIMIT" "LIFETIME" "LAST SEEN"
-    echo "  ──────────────────────────────────────────────────────────────────────────────────"
+    echo "╔══════════════════════════════════════════════════════════════════════════════════════════════════╗"
+    printf "║  wg-forge Clients (%d total)%67s║\n" "$COUNT" ""
+    echo "╚══════════════════════════════════════════════════════════════════════════════════════════════════╝"
+    printf "  %-22s %-13s %-10s %-10s %-12s %-12s %-12s %s\n" \
+        "NAME" "IP" "STATUS" "SESSION" "LIMIT" "LIFETIME" "LAST SEEN" "EXPIRES"
+    echo "  ──────────────────────────────────────────────────────────────────────────────────────────────"
 
     grep -v "^#" "$CLIENTS_FILE" | while IFS=: read -r NAME PUB IP; do
-        local LIM_LINE LIMIT_BYTES STATUS LIFETIME INFO TOTAL_H HS
+        local LIM_LINE LIMIT_BYTES STATUS EXPIRY LIFETIME INFO TOTAL_H HS
         LIM_LINE=$(grep "^$NAME:" "$LIMITS_FILE")
         LIMIT_BYTES=$(echo "$LIM_LINE" | cut -d: -f2)
         STATUS=$(echo "$LIM_LINE"      | cut -d: -f4)
+        EXPIRY=$(echo "$LIM_LINE"      | cut -d: -f5)
         LIFETIME=$(grep "^$NAME:" "$TOTAL_FILE" | cut -d: -f2)
         INFO=$(wg_peer_info "$PUB")
 
@@ -547,10 +583,11 @@ cmd_list() {
         LIMIT_H=$([ "${LIMIT_BYTES:-0}" -gt 0 ] \
             && bytes_to_human "$LIMIT_BYTES" || echo "unlimited")
 
-        printf "  %-22s %-13s %-10s %-10s %-12s %-12s %s\n" \
+        printf "  %-22s %-13s %-10s %-10s %-12s %-12s %-12s %s\n" \
             "$NAME" "${IP%/32}" "${STATUS:-active}" \
             "$TOTAL_H" "$LIMIT_H" \
-            "$(bytes_to_human "${LIFETIME:-0}")" "$HS"
+            "$(bytes_to_human "${LIFETIME:-0}")" "$HS" \
+            "$(expiry_remaining "${EXPIRY:-0}")"
     done
 }
 
@@ -583,6 +620,15 @@ cmd_enable() {
     # Restore peer block in wg0.conf
     perl -i -0pe "s/# DISABLED\n# (\[Peer\]\n# $NAME\n)/\$1/g" "$WG_CONF"
     echo "✓ Client '$NAME' enabled and usage reset"
+
+    # Warn if the (preserved) expiry is already in the past — checklimits will
+    # re-disable it on its next run. setexpiry to push it out, or clear it.
+    local EXPIRY
+    EXPIRY=$(grep "^$NAME:" "$LIMITS_FILE" | cut -d: -f5)
+    if [ -n "$EXPIRY" ] && [ "$EXPIRY" != "0" ] && [ "$(date +%s)" -ge "$EXPIRY" ]; then
+        echo "⚠ Expiry has already passed — will be re-disabled on the next limit check."
+        echo "  Run 'wg-forge setexpiry $NAME <duration>' to extend, or 'setexpiry $NAME never' to clear."
+    fi
 }
 
 cmd_extend() {
@@ -624,6 +670,26 @@ cmd_setlimit() {
     grep -q "^$NAME:" "$CLIENTS_FILE" || { echo "✗ Client '$NAME' not found"; exit 1; }
     lim_set_field "$NAME" 2 "$(human_to_bytes "$LIMIT")"
     echo "✓ Limit for '$NAME' set to $LIMIT"
+}
+
+# Set (or clear) a time-based expiry for a client. Pass a duration relative to
+# now (e.g. 30d, 12h, 2w) to expire access then, or "never"/"0" to clear it.
+cmd_setexpiry() {
+    local NAME=$1 WHEN=$2
+    [ -z "$NAME" ] || [ -z "$WHEN" ] && \
+        echo "Usage: wg-forge setexpiry <n> <duration e.g. 30d, or 'never'>" && exit 1
+    grep -q "^$NAME:" "$CLIENTS_FILE" || { echo "✗ Client '$NAME' not found"; exit 1; }
+
+    if [ "$WHEN" = "never" ] || [ "$WHEN" = "0" ]; then
+        lim_set_field "$NAME" 5 "0"
+        echo "✓ Expiry for '$NAME' cleared (never expires)"
+        return
+    fi
+
+    local EPOCH
+    EPOCH=$(( $(date +%s) + $(duration_to_seconds "$WHEN") ))
+    lim_set_field "$NAME" 5 "$EPOCH"
+    echo "✓ Client '$NAME' will expire in $WHEN  ($(date -d "@$EPOCH" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "$EPOCH"))"
 }
 
 cmd_setdns() {
@@ -687,19 +753,34 @@ cmd_regenerate() {
 
 cmd_checklimits() {
     grep -v "^#" "$CLIENTS_FILE" | while IFS=: read -r NAME PUB IP; do
-        local INFO RX TX TOTAL LIM_LINE LIMIT_BYTES LAST STATUS
+        local INFO RX TX TOTAL LIM_LINE LIMIT_BYTES LAST STATUS EXPIRY
+        LIM_LINE=$(grep "^$NAME:" "$LIMITS_FILE")
+        [ -z "$LIM_LINE" ] && continue
+        LIMIT_BYTES=$(echo "$LIM_LINE" | cut -d: -f2)
+        LAST=$(echo "$LIM_LINE"        | cut -d: -f3)
+        STATUS=$(echo "$LIM_LINE"      | cut -d: -f4)
+        EXPIRY=$(echo "$LIM_LINE"      | cut -d: -f5)
+
+        # Disable if past its expiry time. Checked before the handshake guard
+        # below so it applies even to clients that have never connected.
+        if [ -n "$EXPIRY" ] && [ "$EXPIRY" != "0" ] && \
+           [ "$(date +%s)" -ge "$EXPIRY" ] && \
+           [ "$STATUS" = "active" ]; then
+            wg set "$WG_INTERFACE" peer "$PUB" remove 2>/dev/null
+            lim_set_field "$NAME" 4 "disabled"
+            # Comment out peer block in wg0.conf so it stays disabled after reboot
+            perl -i -0pe "s/(\[Peer\]\n# $NAME\n)/# DISABLED\n# \$1/g" "$WG_CONF"
+            echo "$(date '+%Y-%m-%d %H:%M:%S') | $NAME disabled - expired" \
+                >> /var/log/wg-forge.log
+            continue
+        fi
+
         INFO=$(wg_peer_info "$PUB")
         [ -z "$INFO" ] && continue
 
         RX=$(echo "$INFO"    | awk '{print $6}')
         TX=$(echo "$INFO"    | awk '{print $7}')
         TOTAL=$((RX + TX))
-
-        LIM_LINE=$(grep "^$NAME:" "$LIMITS_FILE")
-        [ -z "$LIM_LINE" ] && continue
-        LIMIT_BYTES=$(echo "$LIM_LINE" | cut -d: -f2)
-        LAST=$(echo "$LIM_LINE"        | cut -d: -f3)
-        STATUS=$(echo "$LIM_LINE"      | cut -d: -f4)
 
         # Update session counter
         lim_set_field "$NAME" 3 "$TOTAL"
@@ -848,7 +929,7 @@ cmd_help() {
     setup                          Install WireGuard, configure server, bring up interface
 
   ── Clients ─────────────────────────────────────
-    add      <n> [limit]        Create client  (e.g. add john 10GB)
+    add      <n> [limit] [expiry] Create client  (e.g. add john 10GB 30d)
     remove   <n>                Remove client
     show     <n>                Show info + config
     list                           List all clients
@@ -856,6 +937,7 @@ cmd_help() {
     enable   <n>                Restore access + reset session
     extend   <n> <amount>       Add bandwidth  (e.g. extend john 5GB)
     setlimit <n> <limit>        Change bandwidth limit
+    setexpiry <n> <duration>    Set/clear time expiry (e.g. 30d, or 'never')
     regenerate <n>              Issue new keypair
 
   ── Server ──────────────────────────────────────
@@ -889,7 +971,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
 
     case "$1" in
         setup)       cmd_setup                 ;;
-        add)         cmd_add         "$2" "$3" ;;
+        add)         cmd_add         "$2" "$3" "$4" ;;
         remove)      cmd_remove      "$2"      ;;
         show)        cmd_show        "$2"      ;;
         list)        cmd_list                  ;;
@@ -897,6 +979,7 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         enable)      cmd_enable      "$2"      ;;
         extend)      cmd_extend      "$2" "$3" ;;
         setlimit)    cmd_setlimit    "$2" "$3" ;;
+        setexpiry)   cmd_setexpiry   "$2" "$3" ;;
         setdns)      cmd_setdns      "$2"      ;;
         setroutes)   cmd_setroutes   "$2"      ;;
         regenerate)  cmd_regenerate  "$2"      ;;
