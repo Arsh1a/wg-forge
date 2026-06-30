@@ -66,6 +66,27 @@ export function getConfig(): Record<string, string> {
   return parseConf(FORGE_CONF);
 }
 
+// Render a client .conf from the server config. DNS falls back to 8.8.8.8 for
+// installs created before WG_DNS existed.
+export function buildClientConfig(
+  cfg: Record<string, string>,
+  privateKey: string,
+  address: string
+): string {
+  return [
+    '[Interface]',
+    `PrivateKey = ${privateKey}`,
+    `Address = ${address}`,
+    `DNS = ${cfg['WG_DNS'] || '8.8.8.8'}`,
+    '',
+    '[Peer]',
+    `PublicKey = ${cfg['VPS_PUBKEY'] ?? ''}`,
+    `Endpoint = ${cfg['VPS_ENDPOINT'] ?? ''}`,
+    'AllowedIPs = 0.0.0.0/0',
+    'PersistentKeepalive = 25'
+  ].join('\n');
+}
+
 export function getClients(): Client[] {
   const cfg  = getConfig();
   const dump = getWgDump(cfg['WG_INTERFACE'] ?? 'wg0');

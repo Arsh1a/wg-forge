@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-06-30
+
+### Added
+
+- Configurable client DNS. `wg-forge setup` now prompts for the DNS server(s) pushed to clients (default `8.8.8.8`), and a new `wg-forge setdns <dns>` command changes it afterwards — point clients at a Pi-hole/AdGuard resolver, or pass comma-separated servers (e.g. `1.1.1.1, 1.0.0.1`). The web dashboard's config download/QR uses the same setting. Configs created before this release fall back to `8.8.8.8`.
+
 ## [0.4.2] - 2026-05-27
 
 ### Fixed

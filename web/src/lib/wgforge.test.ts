@@ -14,7 +14,7 @@ vi.mock('child_process', () => ({
   execSync: (...args: unknown[]) => execSync(...args)
 }));
 
-import { getConfig, getClients } from './wgforge';
+import { getConfig, getClients, buildClientConfig } from './wgforge';
 
 const FORGE_CONF = '/etc/wg-forge/config.conf';
 const CLIENTS_FILE = '/etc/wireguard/clients.conf';
@@ -177,5 +177,43 @@ describe('getClients', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+});
+
+describe('buildClientConfig', () => {
+  // Pure function — no fs/exec mocking needed.
+  const cfg = {
+    VPS_PUBKEY: 'SRVPUB',
+    VPS_ENDPOINT: '1.2.3.4:51820'
+  };
+
+  it('uses WG_DNS from config when set', () => {
+    const conf = buildClientConfig({ ...cfg, WG_DNS: '1.1.1.1' }, 'PRIV', '10.99.0.3/32');
+    expect(conf).toContain('DNS = 1.1.1.1');
+  });
+
+  it('falls back to 8.8.8.8 when WG_DNS is absent', () => {
+    const conf = buildClientConfig(cfg, 'PRIV', '10.99.0.3/32');
+    expect(conf).toContain('DNS = 8.8.8.8');
+  });
+
+  it('falls back to 8.8.8.8 when WG_DNS is empty', () => {
+    const conf = buildClientConfig({ ...cfg, WG_DNS: '' }, 'PRIV', '10.99.0.3/32');
+    expect(conf).toContain('DNS = 8.8.8.8');
+  });
+
+  it('preserves comma-separated DNS servers', () => {
+    const conf = buildClientConfig({ ...cfg, WG_DNS: '1.1.1.1, 1.0.0.1' }, 'PRIV', '10.99.0.3/32');
+    expect(conf).toContain('DNS = 1.1.1.1, 1.0.0.1');
+  });
+
+  it('embeds the private key, address, and server peer details', () => {
+    const conf = buildClientConfig({ ...cfg, WG_DNS: '8.8.8.8' }, 'CLIENTPRIV', '10.99.0.3/32');
+    expect(conf).toContain('PrivateKey = CLIENTPRIV');
+    expect(conf).toContain('Address = 10.99.0.3/32');
+    expect(conf).toContain('PublicKey = SRVPUB');
+    expect(conf).toContain('Endpoint = 1.2.3.4:51820');
+    expect(conf).toContain('AllowedIPs = 0.0.0.0/0');
+    expect(conf).toContain('PersistentKeepalive = 25');
   });
 });

@@ -97,3 +97,40 @@ EOF
   # wrongly pick .4 and return .5.
   [ "$(next_ip)" = "10.99.0.11" ]
 }
+
+# ── client_config (DNS is configurable) ─────────────────────────
+
+@test "client_config: uses WG_DNS when set" {
+  WG_DNS="1.1.1.1"
+  VPS_PUBKEY="SRVPUB"
+  VPS_ENDPOINT="1.2.3.4:51820"
+  run client_config "CLIENTPRIV" "10.99.0.3"
+  [[ "$output" == *"DNS = 1.1.1.1"* ]]
+}
+
+@test "client_config: falls back to 8.8.8.8 when WG_DNS is unset" {
+  unset WG_DNS
+  VPS_PUBKEY="SRVPUB"
+  VPS_ENDPOINT="1.2.3.4:51820"
+  run client_config "CLIENTPRIV" "10.99.0.3"
+  [[ "$output" == *"DNS = 8.8.8.8"* ]]
+}
+
+@test "client_config: accepts multiple comma-separated DNS servers" {
+  WG_DNS="1.1.1.1, 1.0.0.1"
+  VPS_PUBKEY="SRVPUB"
+  VPS_ENDPOINT="1.2.3.4:51820"
+  run client_config "CLIENTPRIV" "10.99.0.3"
+  [[ "$output" == *"DNS = 1.1.1.1, 1.0.0.1"* ]]
+}
+
+@test "client_config: normalizes the address to a single /32" {
+  WG_DNS="8.8.8.8"
+  VPS_PUBKEY="SRVPUB"
+  VPS_ENDPOINT="1.2.3.4:51820"
+  # Whether the caller passes a bare IP or one already carrying /32,
+  # the rendered config must contain exactly one /32 suffix.
+  run client_config "CLIENTPRIV" "10.99.0.3/32"
+  [[ "$output" == *"Address = 10.99.0.3/32"* ]]
+  [[ "$output" != *"/32/32"* ]]
+}

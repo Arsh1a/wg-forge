@@ -40,6 +40,7 @@ wg-forge disable <n>           Revoke access
 wg-forge enable <n>            Restore access + reset session
 wg-forge extend <n> <amount>   Add bandwidth  (e.g. extend john 5GB)
 wg-forge setlimit <n> <limit>  Change bandwidth limit
+wg-forge setdns <dns>          Set DNS pushed to clients (e.g. 1.1.1.1)
 wg-forge regenerate <n>        Issue new keypair
 wg-forge total                 Lifetime usage per user
 wg-forge update [version]      Update to latest release
